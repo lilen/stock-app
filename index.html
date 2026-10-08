@@ -852,15 +852,34 @@ createApp({
 
     async function loadStockList() {
       if (stockList.value.length) return
-      const today = getTodayStr()
-      // 當天快取直接用
+      // 快取直接用
       try {
         const cached = JSON.parse(localStorage.getItem(CACHE_KEY)||'{}')
-        if (cached.date===today && Array.isArray(cached.list) && cached.list.length) {
-          stockList.value = cached.list; return
+        if (Array.isArray(cached.list) && cached.list.length > 1000) {
+          stockList.value = cached.list
+          const tse = cached.list.filter(s=>s.ex==='tse').length
+          const otc = cached.list.filter(s=>s.ex==='otc').length
+          listCounts.value = { tse, otc }
+          return
         }
       } catch {}
       listLoading.value = true
+      try {
+        // 優先抓同源靜態 stocks.json（無 CORS 問題）
+        const r = await timedFetch('stocks.json', 15000)
+        if (!r.ok) throw new Error(r.status)
+        const list = await r.json()
+        if (Array.isArray(list) && list.length > 100) {
+          stockList.value = list
+          const tse = list.filter(s=>s.ex==='tse').length
+          const otc = list.filter(s=>s.ex==='otc').length
+          listCounts.value = { tse, otc }
+          try { localStorage.setItem(CACHE_KEY, JSON.stringify({ list })) } catch {}
+          listLoading.value = false
+          return
+        }
+      } catch {}
+      // fallback：直接打 API（含 CORS proxy）
       const [r1,r2] = await Promise.allSettled([
         fetchJsonList(TWSE_URL),
         fetchJsonList(TPEX_URL),
@@ -882,12 +901,16 @@ createApp({
       if (list.length) {
         stockList.value = list
         listCounts.value = { tse, otc }
-        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ date:today, list })) } catch {}
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ list })) } catch {}
       } else {
-        // 抓取失敗 → 沿用舊快取（即使日期不同）
         try {
           const stale = JSON.parse(localStorage.getItem(CACHE_KEY)||'{}')
-          if (Array.isArray(stale.list) && stale.list.length) stockList.value = stale.list
+          if (Array.isArray(stale.list) && stale.list.length) {
+            stockList.value = stale.list
+            const t = stale.list.filter(s=>s.ex==='tse').length
+            const o = stale.list.filter(s=>s.ex==='otc').length
+            listCounts.value = { tse:t, otc:o }
+          }
         } catch {}
       }
       listLoading.value = false
