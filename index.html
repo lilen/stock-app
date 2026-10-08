@@ -64,7 +64,7 @@
       background:#101010; min-width:80px; font-weight:500; }
     tbody tr { cursor:pointer; transition:background .1s; }
     tbody tr:active { background:#1c1c1c; }
-    tbody td { font-size:15px; padding:9px 10px; text-align:right; white-space:nowrap; border-bottom:1px solid #181818; }
+    tbody td { font-size:16px; padding:9px 10px; text-align:right; white-space:nowrap; border-bottom:1px solid #181818; }
     tbody td:first-child { text-align:left; position:sticky; left:0; z-index:10; background:var(--bg); min-width:80px; }
     .lup-badge { display:inline-block; background:var(--red); color:#fff;
       padding:1px 5px; border-radius:2px; font-size:13px; }
@@ -422,7 +422,7 @@
             <span class="ri-name">{{ s.n }}</span>
             <span class="ri-ex">{{ s.ex.toUpperCase() }}</span>
             <span v-if="inWatchlist(s.c)" class="ri-added">✓</span>
-            <button v-else class="ri-add" @click="addStock(s.c)">加入</button>
+            <button v-else class="ri-add" @click="addStock(s.c, s.n)">加入</button>
           </div>
         </template>
 
@@ -507,6 +507,7 @@ const OTC_MARGIN_URL   = isLocal ? '/proxy/otc_margin'   : 'https://www.tpex.org
 const GROUPS_KEY      = 'stock_groups_v1'
 const CACHE_KEY       = 'stock_list_cache_v3'
 const PRICE_CACHE_KEY = 'stock_price_v1'
+const NAME_MAP_KEY    = 'stock_names_v1'
 
 // ─── 預設群組 ─────────────────────────────────────────────────────
 const DEFAULT_GROUPS = {
@@ -576,6 +577,7 @@ createApp({
     const tableTime  = ref('')
 
     // ── 群組 ────────────────────────────────────────────
+    const nameMap      = ref((() => { try { return JSON.parse(localStorage.getItem(NAME_MAP_KEY)||'{}') } catch { return {} } })())
     const groupsData   = ref(loadGroups())
     const curGroup     = computed(() => groupsData.value.groups[groupsData.value.current])
     const watchlist    = computed(() => curGroup.value?.stocks ?? [])
@@ -605,10 +607,14 @@ createApp({
       if (n) groupsData.value.groups[idx].name = n
       editIdx.value = -1
     }
-    function addStock(code) {
+    function addStock(code, name) {
       const stocks = curGroup.value.stocks
       if (!stocks.includes(code)) {
         stocks.push(code)
+        if (name) {
+          nameMap.value = { ...nameMap.value, [code]: name }
+          try { localStorage.setItem(NAME_MAP_KEY, JSON.stringify(nameMap.value)) } catch {}
+        }
         refresh()
       }
     }
@@ -667,7 +673,7 @@ createApp({
       { key:'otc', name:'櫃買', ...pick(idxData.value['o00'],'value','change','pct') },
     ])
     const rows = computed(() => watchlist.value.map(c =>
-      stockMap.value[c] || { code:c, name:c, price:null, change:null, pct:null, high:null, low:null, limitUp:false }
+      stockMap.value[c] || { code:c, name:nameMap.value[c]||c, price:null, change:null, pct:null, high:null, low:null, limitUp:false }
     ))
 
     // ── 解析 MIS ─────────────────────────────────────────
@@ -763,8 +769,8 @@ createApp({
     }
     async function fetchFallback() {
       const [r1,r2,r3] = await Promise.allSettled([
-        timedFetch(TWSE_URL, 10000).then(r=>r.json()),
-        timedFetch(TPEX_URL, 10000).then(r=>r.json()),
+        fetchJsonList(TWSE_URL),
+        fetchJsonList(TPEX_URL),
         timedFetch(MI_IDX_URL, 10000).then(r=>r.json()),
       ])
       parseOpenApi(r1.status==='fulfilled'?r1.value:[],r2.status==='fulfilled'?r2.value:[])
@@ -962,7 +968,7 @@ createApp({
       try {
         const d = await fetchMisRaw(`tse_${code}.tw|otc_${code}.tw`)
         const found = (d.msgArray||[]).find(item => item.c===code && item.c)
-        if (found) { addStock(code); directStatus.value = 'added' }
+        if (found) { addStock(code, found.n); directStatus.value = 'added' }
         else        directStatus.value = 'not_found'
       } catch { directStatus.value = 'error' }
     }
@@ -1086,7 +1092,7 @@ createApp({
     return {
       todayDate, tableDate, tableTime,
       // groups
-      groupsData, curGroup, watchlist, showGroupPanel,
+      nameMap, groupsData, curGroup, watchlist, showGroupPanel,
       editIdx, editName, renameInputEl,
       switchGroup, startRename, confirmRename, addStock, inWatchlist,
       // edit mode
