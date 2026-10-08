@@ -609,7 +609,7 @@ createApp({
       const stocks = curGroup.value.stocks
       if (!stocks.includes(code)) {
         stocks.push(code)
-        if (isTradingHours()) refresh()
+        refresh()
       }
     }
     function inWatchlist(code) { return curGroup.value.stocks.includes(code) }
@@ -666,7 +666,9 @@ createApp({
       { key:'tse', name:'加權', ...pick(idxData.value['t00'],'value','change','pct') },
       { key:'otc', name:'櫃買', ...pick(idxData.value['o00'],'value','change','pct') },
     ])
-    const rows = computed(() => watchlist.value.map(c => stockMap.value[c]).filter(Boolean))
+    const rows = computed(() => watchlist.value.map(c =>
+      stockMap.value[c] || { code:c, name:c, price:null, change:null, pct:null, high:null, low:null, limitUp:false }
+    ))
 
     // ── 解析 MIS ─────────────────────────────────────────
     function parseMis(data) {
