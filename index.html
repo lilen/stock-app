@@ -384,15 +384,19 @@
     <div class="add-area">
       <div class="search-bar">
         <input
-          type="search"
-          v-model="searchText"
-          @keydown.enter.prevent
+          type="text"
+          ref="searchRef"
+          :value="searchText"
+          @input="searchText = $event.target.value"
           placeholder="輸入代號或名稱…"
           class="search-input"
           autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
           enterkeyhint="search"
         />
-        <button class="search-btn" @click="searchText=searchText">搜尋</button>
+        <button class="search-btn" @click="searchText = searchRef?.value || searchText">搜尋</button>
       </div>
 
       <div class="result-area">
@@ -809,6 +813,7 @@ createApp({
       document.addEventListener('touchend',  handleTouchEnd)
       loadPriceCache()
       refresh()
+      loadStockList()
     })
     onUnmounted(() => {
       document.removeEventListener('touchmove', handleTouchMove)
@@ -820,6 +825,7 @@ createApp({
     const stockList    = ref([])
     const listLoading  = ref(false)
     const searchText   = ref('')
+    const searchRef    = ref(null)
     const directStatus = ref('idle')
 
     async function loadStockList() {
@@ -1037,8 +1043,8 @@ createApp({
       // list
       misLoading, tseIdx, indexBar, rows, status, stockMap,
       // search
-      stockList, listLoading, searchText,
-      searchResults, showDirectAdd, directStatus, doSearch, directAdd,
+      stockList, listLoading, searchText, searchRef,
+      searchResults, showDirectAdd, directStatus, directAdd,
       // institutional
       instMap, instLoading, instRows,
       // margin
