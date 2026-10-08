@@ -904,6 +904,14 @@ createApp({
       return parts.join('|')
     }
 
+    // 證交所／櫃買沒開 CORS：優先走使用者自己的 Apps Script 代理（☁ 設定的網址），allorigins 當備援
+    function proxyUrls(url) {
+      const list = []
+      if (syncUrl.value) list.push(`${syncUrl.value}?url=${encodeURIComponent(url)}`)
+      list.push(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`)
+      return list
+    }
+
     async function fetchMisRaw(exCh) {
       if (isLocal) {
         const r = await timedFetch(`/proxy/mis?ex_ch=${encodeURIComponent(exCh)}`)
@@ -911,10 +919,7 @@ createApp({
         return r.json()
       }
       const base = 'https://mis.twse.com.tw/stock/api/getStockInfo.jsp?json=1&delay=0&ex_ch=' + exCh
-      return Promise.any([
-        `https://corsproxy.io/?${encodeURIComponent(base)}`,
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
-      ].map(u => timedFetch(u, 8000)
+      return Promise.any(proxyUrls(base).map(u => timedFetch(u, 10000)
         .then(r => { if (!r.ok) throw new Error(r.status); return r.json() })
         .then(d => { if (!d.msgArray) throw new Error('no msgArray'); return d })))
     }
@@ -930,16 +935,20 @@ createApp({
       const [r1,r2,r3] = await Promise.allSettled([
         fetchJsonList(TWSE_URL),
         fetchJsonList(TPEX_URL),
-        timedFetch(MI_IDX_URL, 10000).then(r=>r.json()),
+        fetchJsonList(MI_IDX_URL),
       ])
       parseOpenApi(r1.status==='fulfilled'?r1.value:[],r2.status==='fulfilled'?r2.value:[])
       if (r3.status==='fulfilled' && Array.isArray(r3.value)) {
         const ni = {...idxData.value}
-        const item = r3.value.find(x => (x.Index||'').includes('加權'))
+        // 欄位名稱已改為中文（指數／收盤指數／漲跌／漲跌點數／漲跌百分比），漲跌方向另放在「漲跌」
+        const item = r3.value.find(x => (x['指數'] ?? x.Index) === '發行量加權股價指數')
         if (item) {
-          const px  = parseFloat(item.CloseIndex)||null
-          const chg = parseFloat(item.Change)||null
-          const pct = parseFloat((item.ChangePCT||'').replace(/[+%]/g,''))||null
+          const sign = (item['漲跌'] ?? '') === '-' ? -1 : 1
+          const px   = parseFloat(item['收盤指數'] ?? item.CloseIndex) || null
+          const chgN = parseFloat(item['漲跌點數'] ?? item.Change)
+          const pctN = parseFloat(String(item['漲跌百分比'] ?? item.ChangePCT ?? '').replace(/[+%]/g,''))
+          const chg  = isNaN(chgN) ? null : sign * Math.abs(chgN)
+          const pct  = isNaN(pctN) ? null : sign * Math.abs(pctN)
           const prev = (px!=null&&chg!=null) ? Math.round((px-chg)*100)/100 : null
           ni['t00'] = { name:'加權指', value:px, price:px, prevClose:prev,
             high:parseFloat(item.HighIndex)||px, low:parseFloat(item.LowIndex)||px, change:chg, pct }
@@ -1013,11 +1022,7 @@ createApp({
       const tryUrl = u => timedFetch(u, 15000)
         .then(r => { if (!r.ok) throw new Error(r.status); return r.json() })
         .then(d => { if (!Array.isArray(d) || !d.length) throw new Error('empty'); return d })
-      return Promise.any([
-        tryUrl(url),
-        tryUrl(`https://corsproxy.io/?${encodeURIComponent(url)}`),
-        tryUrl(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`),
-      ])
+      return Promise.any([url, ...proxyUrls(url)].map(tryUrl))
     }
 
     async function loadStockList() {
@@ -1166,12 +1171,12 @@ createApp({
       instLoading.value = true
       try {
         const [r1,r2,r3,r4,r5,r6] = await Promise.allSettled([
-          fetch(INST_FOREIGN_URL).then(r=>r.json()),
-          fetch(INST_TRUST_URL).then(r=>r.json()),
-          fetch(INST_DEALER_URL).then(r=>r.json()),
-          fetch(OTC_FOREIGN_URL).then(r=>r.json()),
-          fetch(OTC_TRUST_URL).then(r=>r.json()),
-          fetch(OTC_DEALER_URL).then(r=>r.json()),
+          fetchJsonList(INST_FOREIGN_URL),
+          fetchJsonList(INST_TRUST_URL),
+          fetchJsonList(INST_DEALER_URL),
+          fetchJsonList(OTC_FOREIGN_URL),
+          fetchJsonList(OTC_TRUST_URL),
+          fetchJsonList(OTC_DEALER_URL),
         ])
         parseInstitutional(
           r1.status==='fulfilled'?r1.value:[],
@@ -1221,8 +1226,8 @@ createApp({
       marginLoading.value = true
       try {
         const [r1,r2] = await Promise.allSettled([
-          fetch(MARGIN_URL).then(r=>r.json()),
-          fetch(OTC_MARGIN_URL).then(r=>r.json()),
+          fetchJsonList(MARGIN_URL),
+          fetchJsonList(OTC_MARGIN_URL),
         ])
         parseMargin(
           r1.status==='fulfilled'?r1.value:[],
