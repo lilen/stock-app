@@ -75,8 +75,8 @@
       padding-bottom:env(safe-area-inset-bottom,4px); flex-shrink:0; }
     .bnav-item { flex:1; display:flex; flex-direction:column; align-items:center;
       padding:7px 0 5px; gap:3px; cursor:pointer; }
-    .bnav-ico { font-size:20px; line-height:1.2; color:var(--muted); }
-    .bnav-lbl { font-size:10px; color:var(--muted); }
+    .bnav-ico { font-size:24px; line-height:1.2; color:var(--muted); }
+    .bnav-lbl { font-size:13px; color:var(--muted); }
     .bnav-item.on .bnav-ico, .bnav-item.on .bnav-lbl { color:var(--orange); }
 
     /* ── Add View ── */
@@ -829,8 +829,9 @@ createApp({
     const searchInputEl = ref(null)
 
     async function loadStockList() {
-      if (stockList.value.length) return    // already loaded
+      if (stockList.value.length) return
       const today = getTodayStr()
+      // 當天快取直接用
       try {
         const cached = JSON.parse(localStorage.getItem(CACHE_KEY)||'{}')
         if (cached.date===today && Array.isArray(cached.list) && cached.list.length) {
@@ -839,8 +840,8 @@ createApp({
       } catch {}
       listLoading.value = true
       const [r1,r2] = await Promise.allSettled([
-        fetch(TWSE_URL).then(r=>r.json()),
-        fetch(TPEX_URL).then(r=>r.json()),
+        timedFetch(TWSE_URL, 15000).then(r=>r.json()),
+        timedFetch(TPEX_URL, 15000).then(r=>r.json()),
       ])
       const list = []
       if (r1.status==='fulfilled') {
@@ -855,8 +856,16 @@ createApp({
           if (c&&n) list.push({ c, n, ex:'otc' })
         }
       }
-      stockList.value = list
-      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ date:today, list })) } catch {}
+      if (list.length) {
+        stockList.value = list
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ date:today, list })) } catch {}
+      } else {
+        // 抓取失敗 → 沿用舊快取（即使日期不同）
+        try {
+          const stale = JSON.parse(localStorage.getItem(CACHE_KEY)||'{}')
+          if (Array.isArray(stale.list) && stale.list.length) stockList.value = stale.list
+        } catch {}
+      }
       listLoading.value = false
     }
 
