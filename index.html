@@ -497,6 +497,10 @@
         <input class="gs-input" style="display:block;width:100%;margin:10px 0;box-sizing:border-box"
                v-model="syncInput" placeholder="https://script.google.com/macros/s/…/exec" />
         <div>狀態：<span class="sync-ic" :class="syncState">{{ syncMsg }}</span></div>
+        <div v-if="syncUrl" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+          <span class="dc-btn" @click="forceUpload">⬆ 以這支手機為準上傳</span>
+          <span class="dc-btn" style="background:#2a2a2a;color:var(--text)" @click="forceDownload">⬇ 用雲端覆蓋這支手機</span>
+        </div>
         <div v-if="syncUrl" style="margin-top:10px">
           其他手機開這個連結即可自動設定：
           <div style="word-break:break-all;color:var(--text);user-select:all;margin-top:4px">{{ syncShareLink }}</div>
@@ -668,8 +672,16 @@ createApp({
       try {
         const d = await (await timedFetch(syncUrl.value, 15000)).json()
         if (pushTimer) return  // 下載期間本機又有修改，交給 push 處理
-        if (d.groups && d.updatedAt > localTs) applyRemote(d)
-        else if (!d.groups || localTs > d.updatedAt) return push()
+        if (!d.groups) {                       // 雲端是空的 → 以本機為準
+          if (!localTs) setLocalTs(Date.now())
+          return push()
+        }
+        if (!d.updatedAt) {                    // 舊版寫入、無時間戳 → 無法判斷誰新，請使用者選
+          setSync('err', '雲端與本機無法自動判斷，請在主要手機按「以這支手機為準上傳」')
+          return
+        }
+        if (d.updatedAt > localTs) applyRemote(d)
+        else if (localTs > d.updatedAt) return push()
         setSync('ok', '已同步 ' + nowHHMMSS())
       } catch { setSync('err', '同步失敗，請確認網址與網路') }
     }
@@ -714,6 +726,23 @@ createApp({
     }
     async function copyShareLink() {
       try { await navigator.clipboard.writeText(syncShareLink.value); copied.value = true } catch {}
+    }
+    async function forceUpload() {
+      if (!confirm('用這支手機的自選股覆蓋雲端？其他手機會跟著變成這支的清單。')) return
+      setLocalTs(Date.now())
+      showSync.value = false
+      await push()
+    }
+    async function forceDownload() {
+      if (!confirm('用雲端的自選股覆蓋這支手機？這支手機目前的清單會被取代。')) return
+      showSync.value = false
+      setSync('busy', '下載中…')
+      try {
+        const d = await (await timedFetch(syncUrl.value, 15000)).json()
+        if (!d.groups) { setSync('err', '雲端還沒有資料'); return }
+        applyRemote(d)
+        setSync('ok', '已同步 ' + nowHHMMSS())
+      } catch { setSync('err', '下載失敗，請確認網址與網路') }
     }
     function onVisible() { if (document.visibilityState === 'visible') pull() }
 
@@ -1230,7 +1259,7 @@ createApp({
       switchGroup, startRename, confirmRename, addStock, inWatchlist,
       // sync
       syncUrl, showSync, syncInput, syncState, syncMsg, syncShareLink, copied,
-      openSync, saveSyncUrl, copyShareLink,
+      openSync, saveSyncUrl, copyShareLink, forceUpload, forceDownload,
       // edit mode
       editMode, dragIdx, removeStock, startDrag,
       // views
