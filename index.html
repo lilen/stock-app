@@ -23,7 +23,7 @@
       background:var(--bg1); flex-shrink:0; }
     .hd-back  { font-size:26px; color:var(--muted); width:28px; cursor:pointer; line-height:1; }
     .hd-title { flex:1; text-align:center; font-size:16px; font-weight:700; letter-spacing:.3px; cursor:pointer; }
-    .hd-icons { width:56px; display:flex; justify-content:flex-end; gap:14px; color:var(--muted); font-size:16px; }
+    .hd-icons { width:56px; display:flex; justify-content:flex-end; gap:14px; color:#fff; font-size:16px; }
 
     /* ── Index Bar ── */
     .idx-bar { display:flex; align-items:center; padding:5px 14px 7px;
@@ -799,10 +799,8 @@ createApp({
       try { await fetchMis() }
       catch(e) {
         console.warn('[MIS]',e.message)
-        if (!Object.keys(stockMap.value).length) {
-          try { await fetchFallback() }
-          catch { misLoading.value=false; status.value={text:'連線失敗',cls:'err'} }
-        } else { status.value={text:'更新失敗',cls:'err'} }
+        try { await fetchFallback() }
+        catch { misLoading.value=false; status.value={text:'連線失敗',cls:'err'} }
       }
       if (isTradingHours()) timer = setTimeout(refresh, 10_000)
     }
