@@ -422,6 +422,11 @@
 <script>
 const { createApp, ref, computed, watch, onMounted, onUnmounted, nextTick } = Vue
 
+// ─── API endpoints（本機走 proxy，線上走直接 API） ─────────────────
+const isLocal  = ['localhost','127.0.0.1'].includes(location.hostname)
+const TWSE_URL = isLocal ? '/proxy/twse' : 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'
+const TPEX_URL = isLocal ? '/proxy/tpex' : 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes'
+
 // ─── localStorage keys ────────────────────────────────────────────
 const GROUPS_KEY = 'stock_groups_v1'
 const CACHE_KEY  = 'stock_list_cache_v1'
@@ -650,7 +655,11 @@ createApp({
     }
 
     async function fetchMis() {
-      const r = await fetch(`/proxy/mis?ex_ch=${encodeURIComponent(buildExCh())}`)
+      const exCh = buildExCh()
+      const url = isLocal
+        ? `/proxy/mis?ex_ch=${encodeURIComponent(exCh)}`
+        : `https://corsproxy.io/?${encodeURIComponent('https://mis.twse.com.tw/stock/api/getStockInfo.jsp?json=1&delay=0&ex_ch=' + exCh)}`
+      const r = await fetch(url)
       if (!r.ok) throw new Error('MIS '+r.status)
       const d = await r.json(); if (!d.msgArray) throw new Error('no msgArray')
       parseMis(d); misLoading.value = false
@@ -659,8 +668,8 @@ createApp({
     }
     async function fetchFallback() {
       const [r1,r2] = await Promise.allSettled([
-        fetch('/proxy/twse').then(r=>r.json()),
-        fetch('/proxy/tpex').then(r=>r.json()),
+        fetch(TWSE_URL).then(r=>r.json()),
+        fetch(TPEX_URL).then(r=>r.json()),
       ])
       parseOpenApi(r1.status==='fulfilled'?r1.value:[],r2.status==='fulfilled'?r2.value:[])
       misLoading.value = false
@@ -712,8 +721,8 @@ createApp({
       } catch {}
       listLoading.value = true
       const [r1,r2] = await Promise.allSettled([
-        fetch('/proxy/twse').then(r=>r.json()),
-        fetch('/proxy/tpex').then(r=>r.json()),
+        fetch(TWSE_URL).then(r=>r.json()),
+        fetch(TPEX_URL).then(r=>r.json()),
       ])
       const list = []
       if (r1.status==='fulfilled') {
@@ -784,7 +793,10 @@ createApp({
       directStatus.value = 'checking'
       try {
         const exCh = `tse_${code}.tw|otc_${code}.tw`
-        const r = await fetch(`/proxy/mis?ex_ch=${encodeURIComponent(exCh)}`)
+        const url = isLocal
+          ? `/proxy/mis?ex_ch=${encodeURIComponent(exCh)}`
+          : `https://corsproxy.io/?${encodeURIComponent('https://mis.twse.com.tw/stock/api/getStockInfo.jsp?json=1&delay=0&ex_ch=' + exCh)}`
+        const r = await fetch(url)
         const d = await r.json()
         const found = (d.msgArray||[]).find(item => item.c===code && item.c)
         if (found) { addStock(code); directStatus.value = 'added' }
