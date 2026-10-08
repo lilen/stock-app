@@ -924,6 +924,56 @@ createApp({
         .then(d => { if (!d.msgArray) throw new Error('no msgArray'); return d })))
     }
 
+    // ── Yahoo 奇摩股市即時報價（線上主要來源；MIS 會拒絕 Google 伺服器，無法經代理取得）──
+    // 後綴 .TW/.TWO 給錯 Yahoo 會自動更正，所以一律用 .TW
+    const YAHOO_URL = 'https://tw.stock.yahoo.com/_td-stock/api/resource/StockServices.stockList;fields=avgPrice%2Corderbook;symbols='
+    function parseYahoo(arr) {
+      const ns = {...stockMap.value}, ni = {...idxData.value}
+      const num = v => { const n = parseFloat(v?.raw ?? v); return isNaN(n) ? null : n }
+      let closedAt = null
+      for (const q of arr) {
+        const sym = q.symbol || ''
+        const price = num(q.price), prev = num(q.regularMarketPreviousClose)
+        if (price == null) continue
+        const chg  = num(q.change) ?? (prev ? price-prev : null)
+        const pct  = (chg!=null && prev) ? chg/prev*100 : null
+        const high = num(q.regularMarketDayHigh) ?? price, low = num(q.regularMarketDayLow) ?? price
+        if (sym === '^TWII' || sym === '^TWOII') {
+          const key = sym === '^TWII' ? 't00' : 'o00'
+          ni[key] = { name:key==='t00'?'加權指':'櫃買指', value:price, price, prevClose:prev, high, low, change:chg, pct }
+          if (key === 't00' && q.marketStatus === 'close') closedAt = q.regularMarketTime
+          continue
+        }
+        const code = sym.split('.')[0]
+        const lup = num(q.limitUpPrice), ldn = num(q.limitDownPrice)
+        ns[code] = { code, name:q.symbolName||nameMap.value[code]||code,
+          price, prevClose:prev, open:num(q.regularMarketOpen), high, low,
+          vol: num(q.volumeK) ?? Math.round((num(q.volume)||0)/1000),
+          change:chg, pct, limitUpPx:lup, limitDnPx:ldn,
+          limitUp: lup!=null && Math.abs(price-lup)<0.01 }
+      }
+      stockMap.value = ns; idxData.value = ni
+      return closedAt
+    }
+    async function fetchYahoo() {
+      const syms = [...new Set(watchlist.value)].map(c => c + '.TW').concat(['^TWII', '^TWOII'])
+      const url  = YAHOO_URL + encodeURIComponent(syms.join(','))
+      const d = await Promise.any(proxyUrls(url).map(u => timedFetch(u, 12000)
+        .then(r => { if (!r.ok) throw new Error(r.status); return r.json() })
+        .then(d => { if (!Array.isArray(d) || !d.length) throw new Error('empty'); return d })))
+      const closedAt = parseYahoo(d)
+      misLoading.value = false
+      const hms = nowHHMMSS(); tableTime.value = hms.slice(0,5)
+      if (closedAt) {
+        const t = new Date(new Date(closedAt).toLocaleString('en-US', { timeZone:'Asia/Taipei' }))
+        const mmdd = String(t.getMonth()+1).padStart(2,'0') + '/' + String(t.getDate()).padStart(2,'0')
+        status.value = { text:`收盤資料 ${mmdd}`, cls:'close' }
+      } else {
+        status.value = { text:`● ${hms}`, cls:'live' }
+      }
+      savePriceCache()
+    }
+
     async function fetchMis() {
       const d = await fetchMisRaw(buildExCh())
       parseMis(d); misLoading.value = false
@@ -1005,8 +1055,14 @@ createApp({
     async function refresh() {
       if (timer) { clearTimeout(timer); timer=null }
       let misOk = false
-      try { await fetchMis(); misOk = true }
-      catch(e) { console.warn('[MIS]',e.message) }
+      if (!isLocal) {
+        try { await fetchYahoo(); misOk = true }
+        catch(e) { console.warn('[Yahoo]', e.message) }
+      }
+      if (!misOk) {
+        try { await fetchMis(); misOk = true }
+        catch(e) { console.warn('[MIS]',e.message) }
+      }
       // fetchFallback 條件：MIS 失敗，或 MIS 成功但沒有指數資料（空 msgArray）
       if (!misOk || !idxData.value.t00?.value) {
         try { await fetchFallback() }

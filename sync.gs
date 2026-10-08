@@ -6,8 +6,9 @@
 
 const KEY = 'watch_data'
 
-// 行情代理只允許這些來源（證交所、櫃買中心沒有開 CORS，瀏覽器無法直接讀）
-const PROXY_HOSTS = ['mis.twse.com.tw', 'openapi.twse.com.tw', 'www.tpex.org.tw']
+// 行情代理只允許這些來源（都沒有開 CORS，瀏覽器無法直接讀）
+// 註：mis.twse.com.tw 幾乎都會拒絕 Google 伺服器連線，即時報價改以 Yahoo 為主
+const PROXY_HOSTS = ['tw.stock.yahoo.com', 'mis.twse.com.tw', 'openapi.twse.com.tw', 'www.tpex.org.tw']
 
 function doGet(e) {
   const url = e && e.parameter && e.parameter.url
