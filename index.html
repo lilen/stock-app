@@ -828,6 +828,22 @@ createApp({
     const searchRef    = ref(null)
     const directStatus = ref('idle')
 
+    async function fetchJsonList(url) {
+      if (isLocal) {
+        const r = await timedFetch(url, 15000)
+        if (!r.ok) throw new Error(r.status)
+        return r.json()
+      }
+      return Promise.any([
+        timedFetch(url, 12000)
+          .then(r => { if (!r.ok) throw new Error(r.status); return r.json() })
+          .then(d => { if (!Array.isArray(d) || !d.length) throw new Error('empty'); return d }),
+        timedFetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, 12000)
+          .then(r => { if (!r.ok) throw new Error(r.status); return r.json() })
+          .then(d => { if (!Array.isArray(d) || !d.length) throw new Error('empty'); return d }),
+      ])
+    }
+
     async function loadStockList() {
       if (stockList.value.length) return
       const today = getTodayStr()
@@ -840,8 +856,8 @@ createApp({
       } catch {}
       listLoading.value = true
       const [r1,r2] = await Promise.allSettled([
-        timedFetch(TWSE_URL, 15000).then(r=>r.json()),
-        timedFetch(TPEX_URL, 15000).then(r=>r.json()),
+        fetchJsonList(TWSE_URL),
+        fetchJsonList(TPEX_URL),
       ])
       const list = []
       if (r1.status==='fulfilled') {
