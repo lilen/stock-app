@@ -733,7 +733,8 @@ createApp({
           change:!isNaN(chg)?chg:0, pct:(!isNaN(chg)&&(cl-chg)>0)?chg/(cl-chg)*100:0,
           limitUpPx:null, limitDnPx:null, limitUp:false }
       }
-      const filtered = {}
+      // 合併：有新資料的股票更新，沒有的保留舊快取
+      const filtered = { ...stockMap.value }
       watchlist.value.forEach(c => { if (ns[c]) filtered[c]=ns[c] })
       if (Object.keys(filtered).length) stockMap.value = filtered
     }
@@ -796,9 +797,11 @@ createApp({
     let timer = null
     async function refresh() {
       if (timer) { clearTimeout(timer); timer=null }
-      try { await fetchMis() }
-      catch(e) {
-        console.warn('[MIS]',e.message)
+      let misOk = false
+      try { await fetchMis(); misOk = true }
+      catch(e) { console.warn('[MIS]',e.message) }
+      // fetchFallback 條件：MIS 失敗，或 MIS 成功但沒有指數資料（空 msgArray）
+      if (!misOk || !idxData.value.t00?.value) {
         try { await fetchFallback() }
         catch { misLoading.value=false; status.value={text:'連線失敗',cls:'err'} }
       }
