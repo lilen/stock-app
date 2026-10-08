@@ -55,16 +55,16 @@
     .tbl-scroll::-webkit-scrollbar { width:0; height:0; }
     table { border-collapse:separate; border-spacing:0; min-width:100%; width:max-content; }
     thead { position:sticky; top:0; z-index:20; }
-    .ch th { background:var(--bg2); color:var(--muted); font-size:11px; font-weight:400;
+    .ch th { background:var(--bg2); color:#fff; font-size:13px; font-weight:400;
       padding:5px 10px; text-align:right; white-space:nowrap; border-bottom:1px solid var(--line); }
     .ch th:first-child { text-align:left; position:sticky; left:0; z-index:30; background:var(--bg2); min-width:80px; }
-    .ir td { background:#101010; font-size:13px; padding:8px 10px;
+    .ir td { background:#101010; font-size:15px; padding:8px 10px;
       text-align:right; white-space:nowrap; border-bottom:1px solid #2c2c2c; }
     .ir td:first-child { text-align:left; position:sticky; left:0; z-index:25;
       background:#101010; min-width:80px; font-weight:500; }
     tbody tr { cursor:pointer; transition:background .1s; }
     tbody tr:active { background:#1c1c1c; }
-    tbody td { font-size:13px; padding:9px 10px; text-align:right; white-space:nowrap; border-bottom:1px solid #181818; }
+    tbody td { font-size:15px; padding:9px 10px; text-align:right; white-space:nowrap; border-bottom:1px solid #181818; }
     tbody td:first-child { text-align:left; position:sticky; left:0; z-index:10; background:var(--bg); min-width:80px; }
     .lup-badge { display:inline-block; background:var(--red); color:#fff;
       padding:1px 5px; border-radius:2px; font-size:13px; }
@@ -219,29 +219,28 @@
       <table>
         <thead>
           <tr class="ch">
-            <th>商品<span style="font-size:9px;font-weight:400;color:var(--muted);margin-left:5px">{{ tableDate }}<template v-if="tableTime"> {{ tableTime }}</template></span></th>
+            <th>商品<span style="font-size:10px;font-weight:400;color:var(--muted);margin-left:5px">{{ tableDate }}<template v-if="tableTime"> {{ tableTime }}</template></span></th>
             <th>成交</th><th>漲跌</th><th>幅度</th>
-            <th>最高</th><th>最低</th><th>昨收</th>
+            <th>最高</th><th>最低</th>
           </tr>
           <tr class="ir">
-            <td :class="cc(tseIdx.change)">{{ tseIdx.name }}</td>
+            <td>{{ tseIdx.name }}</td>
             <td :class="cc(tseIdx.change)">{{ fp(tseIdx.price) }}</td>
             <td :class="cc(tseIdx.change)">{{ fc(tseIdx.change) }}</td>
             <td :class="cc(tseIdx.change)">{{ fpct(tseIdx.pct) }}</td>
             <td class="up">{{ fp(tseIdx.high) }}</td>
             <td class="dn">{{ fp(tseIdx.low) }}</td>
-            <td class="neu">{{ fp(tseIdx.prevClose) }}</td>
           </tr>
         </thead>
         <tbody>
           <template v-if="misLoading">
             <tr v-for="i in (watchlist.length || 6)" :key="'ph'+i" class="loading-row">
-              <td>--</td><td>--</td><td>--</td><td>--</td><td>--</td><td>--</td><td>--</td>
+              <td>--</td><td>--</td><td>--</td><td>--</td><td>--</td><td>--</td>
             </tr>
           </template>
           <template v-else>
             <tr v-for="s in rows" :key="s.code" @click="openDetail(s.code)">
-              <td :class="cc(s.change)">{{ s.name }}</td>
+              <td>{{ s.name }}</td>
               <td>
                 <span v-if="s.limitUp" class="lup-badge">{{ fp(s.price) }}</span>
                 <span v-else :class="cc(s.change)">{{ fp(s.price) }}</span>
@@ -250,7 +249,6 @@
               <td :class="cc(s.change)">{{ fpct(s.pct) }}</td>
               <td :class="cc(s.change)">{{ fp(s.high) }}</td>
               <td :class="cc(s.change)">{{ fp(s.low) }}</td>
-              <td class="neu">{{ fp(s.prevClose) }}</td>
             </tr>
           </template>
         </tbody>
