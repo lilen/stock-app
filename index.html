@@ -498,8 +498,9 @@ const MARGIN_URL       = isLocal ? '/proxy/margin'       : 'https://openapi.twse
 const OTC_MARGIN_URL   = isLocal ? '/proxy/otc_margin'   : 'https://www.tpex.org.tw/openapi/v1/tpex_margin_trn'
 
 // ─── localStorage keys ────────────────────────────────────────────
-const GROUPS_KEY = 'stock_groups_v1'
-const CACHE_KEY  = 'stock_list_cache_v1'
+const GROUPS_KEY      = 'stock_groups_v1'
+const CACHE_KEY       = 'stock_list_cache_v1'
+const PRICE_CACHE_KEY = 'stock_price_v1'
 
 // ─── 預設群組 ─────────────────────────────────────────────────────
 const DEFAULT_GROUPS = {
@@ -720,7 +721,7 @@ createApp({
       }
       const filtered = {}
       watchlist.value.forEach(c => { if (ns[c]) filtered[c]=ns[c] })
-      stockMap.value = filtered
+      if (Object.keys(filtered).length) stockMap.value = filtered
     }
 
     function buildExCh() {
@@ -750,6 +751,7 @@ createApp({
       parseMis(d); misLoading.value = false
       const hms = nowHHMMSS(); tableTime.value = hms.slice(0,5)
       status.value = { text:`● ${hms}`, cls:'live' }
+      savePriceCache()
     }
     async function fetchFallback() {
       const [r1,r2,r3] = await Promise.allSettled([
@@ -774,6 +776,7 @@ createApp({
       misLoading.value = false
       tableTime.value = nowHHMMSS().slice(0,5)
       status.value = { text:`收盤資料 ${todayMMDD()}`, cls:'close' }
+      savePriceCache()
     }
 
     let timer = null
@@ -789,9 +792,25 @@ createApp({
       }
       if (isTradingHours()) timer = setTimeout(refresh, 10_000)
     }
+    function savePriceCache() {
+      if (!Object.keys(stockMap.value).length) return
+      try { localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(stockMap.value)) } catch {}
+    }
+    function loadPriceCache() {
+      try {
+        const m = JSON.parse(localStorage.getItem(PRICE_CACHE_KEY)||'null')
+        if (m && Object.keys(m).length) {
+          stockMap.value = m
+          misLoading.value = false
+          status.value = { text:'讀取中…', cls:'' }
+        }
+      } catch {}
+    }
+
     onMounted(() => {
       document.addEventListener('touchmove', handleTouchMove, { passive: false })
       document.addEventListener('touchend',  handleTouchEnd)
+      loadPriceCache()
       refresh()
     })
     onUnmounted(() => {
