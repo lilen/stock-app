@@ -385,19 +385,14 @@
       <div class="search-bar">
         <input
           type="search"
-          ref="searchInputEl"
-          :value="inputValue"
-          @compositionstart="onCompStart"
-          @compositionend="onCompEnd"
-          @input="onInput"
-          @keydown.enter.prevent="doSearch"
-          @search="doSearch"
+          v-model="searchText"
+          @keydown.enter.prevent
           placeholder="輸入代號或名稱…"
           class="search-input"
           autocomplete="off"
           enterkeyhint="search"
         />
-        <button class="search-btn" @click="doSearch">搜尋</button>
+        <button class="search-btn" @click="searchText=searchText">搜尋</button>
       </div>
 
       <div class="result-area">
@@ -406,7 +401,9 @@
 
         <!-- 等待輸入 -->
         <div v-else-if="!searchText.trim()" class="list-msg">
-          請輸入股票代號或名稱<br>支援上市（TSE）與上櫃（OTC）
+          請輸入股票代號或名稱<br>
+          <span v-if="stockList.length" style="font-size:11px;color:var(--muted)">已載入 {{ stockList.length.toLocaleString() }} 支股票</span>
+          <span v-else style="font-size:11px;color:var(--red)">清單載入失敗，請稍後再進入</span>
         </div>
 
         <!-- 有結果 -->
@@ -820,13 +817,10 @@ createApp({
     })
 
     // ── 加入自選 view ─────────────────────────────────────
-    const stockList   = ref([])   // [{c, n, ex}]
-    const listLoading = ref(false)
-    const inputValue  = ref('')
-    const searchText  = ref('')
-    let   composing   = false
+    const stockList    = ref([])
+    const listLoading  = ref(false)
+    const searchText   = ref('')
     const directStatus = ref('idle')
-    const searchInputEl = ref(null)
 
     async function loadStockList() {
       if (stockList.value.length) return
@@ -874,21 +868,7 @@ createApp({
       loadStockList()
     }
 
-    // IME 處理
-    function onCompStart() { composing = true }
-    function onCompEnd(e) {
-      composing = false
-      inputValue.value = e.target.value
-      searchText.value = e.target.value
-    }
-    function onInput(e) {
-      inputValue.value = e.target.value
-      if (!composing) searchText.value = e.target.value
-    }
-    function doSearch() {
-      const el = searchInputEl.value
-      if (el) { searchText.value = el.value; inputValue.value = el.value }
-    }
+    function doSearch() {}
 
     const searchResults = computed(() => {
       const q = norm(searchText.value.trim())
@@ -1057,9 +1037,8 @@ createApp({
       // list
       misLoading, tseIdx, indexBar, rows, status, stockMap,
       // search
-      stockList, listLoading, inputValue, searchText,
-      searchResults, showDirectAdd, directStatus, searchInputEl,
-      onCompStart, onCompEnd, onInput, doSearch, directAdd,
+      stockList, listLoading, searchText,
+      searchResults, showDirectAdd, directStatus, doSearch, directAdd,
       // institutional
       instMap, instLoading, instRows,
       // margin
