@@ -6,7 +6,7 @@ Endpoints:
   /proxy/tpex            -> tpex.org.tw mainboard_quotes
   /*                     -> static files from this directory
 """
-import json, os, sys, urllib.request, urllib.parse
+import json, os, socketserver, sys, urllib.request, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -99,7 +99,16 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+class Server(ThreadingHTTPServer):
+    # HTTPServer.server_bind calls socket.getfqdn(), which raises
+    # UnicodeDecodeError on Windows when the hostname is non-ASCII.
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = host or 'localhost'
+        self.server_port = port
+
 if __name__ == '__main__':
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
     print(f'Serving at http://localhost:{port}')
-    ThreadingHTTPServer(('', port), Handler).serve_forever()
+    Server(('', port), Handler).serve_forever()
