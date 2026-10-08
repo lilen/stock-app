@@ -44,6 +44,8 @@ class Handler(BaseHTTPRequestHandler):
             self._proxy('https://www.tpex.org.tw/openapi/v1/tpex_trust_fund_trn')
         elif path == '/proxy/otc_dealer':
             self._proxy('https://www.tpex.org.tw/openapi/v1/tpex_dealer_trn')
+        elif path == '/proxy/mi_index':
+            self._proxy('https://openapi.twse.com.tw/v1/exchangeReport/MI_INDEX')
         elif path == '/proxy/margin':
             self._proxy('https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_d')
         elif path == '/proxy/otc_margin':

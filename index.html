@@ -487,8 +487,9 @@ const { createApp, ref, computed, watch, onMounted, onUnmounted, nextTick } = Vu
 
 // ─── API endpoints（本機走 proxy，線上走直接 API） ─────────────────
 const isLocal  = ['localhost','127.0.0.1'].includes(location.hostname)
-const TWSE_URL = isLocal ? '/proxy/twse' : 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'
-const TPEX_URL = isLocal ? '/proxy/tpex' : 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes'
+const TWSE_URL    = isLocal ? '/proxy/twse'     : 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'
+const TPEX_URL    = isLocal ? '/proxy/tpex'     : 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes'
+const MI_IDX_URL  = isLocal ? '/proxy/mi_index' : 'https://openapi.twse.com.tw/v1/exchangeReport/MI_INDEX'
 const INST_FOREIGN_URL = isLocal ? '/proxy/inst_foreign' : 'https://openapi.twse.com.tw/v1/fund/MI_QFIIS'
 const INST_TRUST_URL   = isLocal ? '/proxy/inst_trust'   : 'https://openapi.twse.com.tw/v1/fund/TWT93U'
 const INST_DEALER_URL  = isLocal ? '/proxy/inst_dealer'  : 'https://openapi.twse.com.tw/v1/fund/MI_PROPRIETARY'
@@ -725,24 +726,47 @@ createApp({
       return parts.join('|')
     }
 
+    async function fetchMisRaw(exCh) {
+      if (isLocal) {
+        const r = await fetch(`/proxy/mis?ex_ch=${encodeURIComponent(exCh)}`)
+        if (!r.ok) throw new Error('MIS '+r.status)
+        return r.json()
+      }
+      const base = 'https://mis.twse.com.tw/stock/api/getStockInfo.jsp?json=1&delay=0&ex_ch=' + exCh
+      return Promise.any([
+        `https://corsproxy.io/?${encodeURIComponent(base)}`,
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
+      ].map(u => fetch(u)
+        .then(r => { if (!r.ok) throw new Error(r.status); return r.json() })
+        .then(d => { if (!d.msgArray) throw new Error('no msgArray'); return d })))
+    }
+
     async function fetchMis() {
-      const exCh = buildExCh()
-      const url = isLocal
-        ? `/proxy/mis?ex_ch=${encodeURIComponent(exCh)}`
-        : `https://corsproxy.io/?${encodeURIComponent('https://mis.twse.com.tw/stock/api/getStockInfo.jsp?json=1&delay=0&ex_ch=' + exCh)}`
-      const r = await fetch(url)
-      if (!r.ok) throw new Error('MIS '+r.status)
-      const d = await r.json(); if (!d.msgArray) throw new Error('no msgArray')
+      const d = await fetchMisRaw(buildExCh())
       parseMis(d); misLoading.value = false
       const hms = nowHHMMSS(); tableTime.value = hms.slice(0,5)
       status.value = { text:`● ${hms}`, cls:'live' }
     }
     async function fetchFallback() {
-      const [r1,r2] = await Promise.allSettled([
+      const [r1,r2,r3] = await Promise.allSettled([
         fetch(TWSE_URL).then(r=>r.json()),
         fetch(TPEX_URL).then(r=>r.json()),
+        fetch(MI_IDX_URL).then(r=>r.json()),
       ])
       parseOpenApi(r1.status==='fulfilled'?r1.value:[],r2.status==='fulfilled'?r2.value:[])
+      if (r3.status==='fulfilled' && Array.isArray(r3.value)) {
+        const ni = {...idxData.value}
+        const item = r3.value.find(x => (x.Index||'').includes('加權'))
+        if (item) {
+          const px  = parseFloat(item.CloseIndex)||null
+          const chg = parseFloat(item.Change)||null
+          const pct = parseFloat((item.ChangePCT||'').replace(/[+%]/g,''))||null
+          const prev = (px!=null&&chg!=null) ? Math.round((px-chg)*100)/100 : null
+          ni['t00'] = { name:'加權指', value:px, price:px, prevClose:prev,
+            high:parseFloat(item.HighIndex)||px, low:parseFloat(item.LowIndex)||px, change:chg, pct }
+        }
+        idxData.value = ni
+      }
       misLoading.value = false
       tableTime.value = nowHHMMSS().slice(0,5)
       status.value = { text:`收盤資料 ${todayMMDD()}`, cls:'close' }
@@ -863,12 +887,7 @@ createApp({
       const code = searchText.value.trim().toUpperCase()
       directStatus.value = 'checking'
       try {
-        const exCh = `tse_${code}.tw|otc_${code}.tw`
-        const url = isLocal
-          ? `/proxy/mis?ex_ch=${encodeURIComponent(exCh)}`
-          : `https://corsproxy.io/?${encodeURIComponent('https://mis.twse.com.tw/stock/api/getStockInfo.jsp?json=1&delay=0&ex_ch=' + exCh)}`
-        const r = await fetch(url)
-        const d = await r.json()
+        const d = await fetchMisRaw(`tse_${code}.tw|otc_${code}.tw`)
         const found = (d.msgArray||[]).find(item => item.c===code && item.c)
         if (found) { addStock(code); directStatus.value = 'added' }
         else        directStatus.value = 'not_found'
