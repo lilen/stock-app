@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>自選股</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    :root {
+      --red:#FF3A30; --green:#2ECD6F; --yellow:#FFD60A;
+      --bg:#000; --bg1:#0c0c0c; --bg2:#181818;
+      --line:#252525; --text:#e8e8e8; --muted:#777; --orange:#FF8C00;
+    }
+    html,body { height:100%; background:var(--bg); color:var(--text);
+      font-family:-apple-system,'PingFang TC','Helvetica Neue',sans-serif;
+      -webkit-font-smoothing:antialiased; }
+    #app { display:flex; flex-direction:column; height:100dvh;
+      max-width:430px; margin:0 auto; background:var(--bg); overflow:hidden; }
+
+    /* ── Header ── */
+    .header { display:flex; align-items:center; padding:11px 14px;
+      background:var(--bg1); flex-shrink:0; }
+    .hd-back  { font-size:26px; color:var(--muted); width:28px; cursor:pointer; line-height:1; }
+    .hd-title { flex:1; text-align:center; font-size:16px; font-weight:700; letter-spacing:.3px; cursor:pointer; }
+    .hd-icons { width:56px; display:flex; justify-content:flex-end; gap:14px; color:var(--muted); font-size:16px; }
+
+    /* ── Index Bar ── */
+    .idx-bar { display:flex; align-items:center; padding:5px 14px 7px;
+      background:var(--bg1); border-bottom:1px solid var(--line); gap:20px; flex-shrink:0; }
+    .idx-item { display:flex; align-items:baseline; gap:5px; font-size:12px; }
+    .idx-name { color:var(--muted); }
+    .idx-val  { font-size:13px; font-weight:600; }
+    .idx-ch   { font-size:11.5px; }
+    .idx-status { margin-left:auto; font-size:11px; color:var(--muted); white-space:nowrap; }
+    .idx-status.live  { color:var(--green); }
+    .idx-status.close { color:var(--orange); }
+    .idx-status.err   { color:var(--red); }
+
+    /* ── Colors ── */
+    .up { color:var(--red); } .dn { color:var(--green); }
+    .flat { color:var(--yellow); } .neu { color:#aaa; }
+
+    /* ── Tabs ── */
+    .tabs { display:flex; background:var(--bg1); border-bottom:1px solid var(--line); flex-shrink:0; }
+    .tab { flex:1; text-align:center; padding:9px 0 8px; font-size:14px; color:var(--muted);
+      cursor:pointer; position:relative; transition:color .15s; }
+    .tab.on { color:var(--orange); font-weight:600; }
+    .tab.on::after { content:''; position:absolute; bottom:0; left:18%; right:18%;
+      height:2px; background:var(--orange); border-radius:1px; }
+
+    /* ── Table ── */
+    .tbl-area { flex:1; overflow:hidden; }
+    .tbl-scroll { width:100%; height:100%; overflow:auto; -webkit-overflow-scrolling:touch; }
+    .tbl-scroll::-webkit-scrollbar { width:0; height:0; }
+    table { border-collapse:separate; border-spacing:0; min-width:100%; width:max-content; }
+    thead { position:sticky; top:0; z-index:20; }
+    .ch th { background:var(--bg2); color:var(--muted); font-size:11px; font-weight:400;
+      padding:5px 10px; text-align:right; white-space:nowrap; border-bottom:1px solid var(--line); }
+    .ch th:first-child { text-align:left; position:sticky; left:0; z-index:30; background:var(--bg2); min-width:80px; }
+    .ir td { background:#101010; font-size:13px; padding:8px 10px;
+      text-align:right; white-space:nowrap; border-bottom:1px solid #2c2c2c; }
+    .ir td:first-child { text-align:left; position:sticky; left:0; z-index:25;
+      background:#101010; min-width:80px; font-weight:500; }
+    tbody tr { cursor:pointer; transition:background .1s; }
+    tbody tr:active { background:#1c1c1c; }
+    tbody td { font-size:13px; padding:9px 10px; text-align:right; white-space:nowrap; border-bottom:1px solid #181818; }
+    tbody td:first-child { text-align:left; position:sticky; left:0; z-index:10; background:var(--bg); min-width:80px; }
+    .lup-badge { display:inline-block; background:var(--red); color:#fff;
+      padding:1px 5px; border-radius:2px; font-size:13px; }
+    .loading-row td { color:var(--muted) !important; }
+
+    /* ── Bottom Nav ── */
+    .bnav { display:flex; background:var(--bg1); border-top:1px solid var(--line);
+      padding-bottom:env(safe-area-inset-bottom,4px); flex-shrink:0; }
+    .bnav-item { flex:1; display:flex; flex-direction:column; align-items:center;
+      padding:7px 0 5px; gap:3px; cursor:pointer; }
+    .bnav-ico { font-size:20px; line-height:1.2; color:var(--muted); }
+    .bnav-lbl { font-size:10px; color:var(--muted); }
+    .bnav-item.on .bnav-ico, .bnav-item.on .bnav-lbl { color:var(--orange); }
+
+    /* ── Add View ── */
+    .add-area { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+    .search-bar { display:flex; gap:8px; padding:10px 14px;
+      background:var(--bg1); border-bottom:1px solid var(--line); flex-shrink:0; }
+    .search-input { flex:1; background:#222; border:none; border-radius:8px;
+      padding:8px 12px; color:var(--text); font-size:15px; outline:none;
+      -webkit-appearance:none; caret-color:var(--orange); }
+    .search-input::placeholder { color:var(--muted); }
+    .search-input::-webkit-search-cancel-button { opacity:.5; cursor:pointer; }
+    .search-btn { background:var(--orange); color:#fff; border:none;
+      border-radius:8px; padding:8px 14px; font-size:13px;
+      cursor:pointer; white-space:nowrap; font-weight:600; }
+    .result-area { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+    .result-item { display:flex; align-items:center; padding:11px 14px;
+      border-bottom:1px solid #181818; gap:10px; }
+    .ri-code { font-size:14px; font-weight:700; width:46px; flex-shrink:0; }
+    .ri-name { flex:1; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ri-ex { font-size:10px; color:var(--muted); background:#222;
+      padding:2px 5px; border-radius:3px; flex-shrink:0; }
+    .ri-add { background:var(--red); color:#fff; border:none;
+      border-radius:5px; padding:5px 11px; font-size:12px; cursor:pointer; flex-shrink:0; }
+    .ri-added { color:var(--green); font-size:18px; flex-shrink:0; }
+    .list-msg { text-align:center; padding:40px 20px; color:var(--muted); font-size:13px; line-height:1.8; }
+    .direct-card { margin:16px 14px; background:#1a1a1a; border-radius:10px;
+      padding:14px 16px; display:flex; align-items:center; gap:12px; }
+    .dc-code { font-size:16px; font-weight:700; color:var(--orange); flex-shrink:0; }
+    .dc-desc { flex:1; font-size:12px; color:var(--muted); line-height:1.5; }
+    .dc-btn { background:var(--orange); color:#fff; border:none;
+      border-radius:6px; padding:7px 13px; font-size:12px; cursor:pointer; font-weight:600; flex-shrink:0; }
+    .dc-btn:disabled { opacity:.5; }
+
+    /* ── Group Panel ── */
+    .overlay { position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:100;
+      display:flex; flex-direction:column; justify-content:flex-end;
+      animation:fadeIn .2s; }
+    .group-sheet { background:#161616; border-radius:14px 14px 0 0;
+      overflow:hidden; padding-bottom:env(safe-area-inset-bottom,8px);
+      animation:slideUp .22s cubic-bezier(.32,1,.23,1); }
+    @keyframes fadeIn  { from { opacity:0 } to { opacity:1 } }
+    @keyframes slideUp { from { transform:translateY(100%) } to { transform:translateY(0) } }
+    .gs-title { text-align:center; padding:14px 16px 12px; color:var(--muted);
+      font-size:13px; border-bottom:1px solid var(--line); }
+    .gs-item { display:flex; align-items:center; padding:14px 16px;
+      gap:14px; border-bottom:1px solid #1c1c1c; }
+    .gs-item.cur { color:var(--orange); }
+    .gs-check { width:20px; font-size:16px; text-align:center; flex-shrink:0; }
+    .gs-name  { flex:1; font-size:15px; }
+    .gs-edit  { padding:4px 8px; color:var(--muted); font-size:16px; cursor:pointer; flex-shrink:0; }
+    .gs-input { flex:1; background:#2a2a2a; border:1px solid var(--orange);
+      border-radius:6px; padding:4px 10px; color:var(--text); font-size:15px; outline:none; }
+    .gs-cancel { display:block; text-align:center; padding:16px;
+      color:var(--muted); font-size:15px; cursor:pointer; border-top:1px solid var(--line); }
+
+    /* ── Detail View ── */
+    .detail-area { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+    .detail-price-sec { padding:28px 18px 22px; text-align:center; border-bottom:1px solid var(--line); }
+    .dp-price { font-size:44px; font-weight:700; letter-spacing:-1px; line-height:1.1; margin-bottom:8px; }
+    .dp-change { font-size:17px; font-weight:500; margin-bottom:5px; }
+    .dp-status { font-size:11px; }
+    .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--line); }
+    .dg-item { background:var(--bg1); padding:14px 18px; }
+    .dg-full { grid-column:1 / -1; }
+    .dg-lbl { display:block; font-size:11px; color:var(--muted); margin-bottom:5px; }
+    .dg-val { display:block; font-size:18px; font-weight:600; }
+
+    /* ── Edit Mode List ── */
+    .edit-list { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+    .edit-item { display:flex; align-items:center; padding:13px 14px;
+      border-bottom:1px solid #181818; gap:12px; background:var(--bg);
+      transition:background .1s; }
+    .edit-item.dragging { background:#1a2a1a; }
+    .ei-handle { font-size:22px; color:#444; padding:4px 10px 4px 0;
+      touch-action:none; user-select:none; -webkit-user-select:none;
+      flex-shrink:0; line-height:1; cursor:grab; }
+    .ei-info { flex:1; min-width:0; }
+    .ei-code { font-size:14px; font-weight:700; display:block; margin-bottom:2px; }
+    .ei-name { font-size:12px; color:var(--muted); display:block;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ei-del  { width:28px; height:28px; display:flex; align-items:center;
+      justify-content:center; background:var(--red); color:#fff; border:none;
+      border-radius:50%; font-size:20px; line-height:1; cursor:pointer;
+      flex-shrink:0; padding:0 0 1px 0; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ═══════════════ LIST VIEW ═══════════════ -->
+  <template v-if="view === 'list'">
+    <div class="header">
+      <div class="hd-back">‹</div>
+      <div class="hd-title" @click="showGroupPanel = true" style="line-height:1.3">
+        <div>{{ curGroup.name }} ⌄</div>
+        <div style="font-size:11px;font-weight:400;color:var(--muted);margin-top:1px">{{ todayDate }}</div>
+      </div>
+      <div class="hd-icons">
+        <template v-if="editMode">
+          <span style="font-size:14px;color:var(--orange);font-weight:600;cursor:pointer" @click="editMode=false">完成</span>
+        </template>
+        <template v-else>
+          <span style="font-size:18px;line-height:1">≡</span>
+          <span style="font-size:14px;cursor:pointer" @click="editMode=true">✎</span>
+        </template>
+      </div>
+    </div>
+
+    <div class="idx-bar">
+      <div class="idx-item" v-for="idx in indexBar" :key="idx.key">
+        <span class="idx-name">{{ idx.name }}</span>
+        <span class="idx-val" :class="cc(idx.change)">{{ fp(idx.value) }}</span>
+        <span class="idx-ch"  :class="cc(idx.change)">{{ fc(idx.change) }}</span>
+        <span class="idx-ch"  :class="cc(idx.change)">{{ fpct(idx.pct) }}</span>
+      </div>
+      <span class="idx-status" :class="status.cls">{{ status.text }}</span>
+    </div>
+
+    <div class="tabs">
+      <div v-for="t in tabs" :key="t" class="tab" :class="{ on: tab === t }" @click="tab = t">{{ t }}</div>
+    </div>
+
+    <!-- 編輯模式：排序 / 刪除 -->
+    <div v-if="editMode" class="edit-list">
+      <div v-for="(code, idx) in watchlist" :key="code"
+           class="edit-item" :class="{ dragging: dragIdx === idx }"
+           :data-edit-idx="idx">
+        <span class="ei-handle" @touchstart="startDrag($event, idx)">≡</span>
+        <div class="ei-info">
+          <span class="ei-code">{{ code }}</span>
+          <span class="ei-name">{{ stockMap[code]?.name || code }}</span>
+        </div>
+        <button class="ei-del" @click.stop="removeStock(idx)">×</button>
+      </div>
+      <div v-if="!watchlist.length" class="list-msg">此群組尚無自選股</div>
+    </div>
+
+    <!-- 一般表格 -->
+    <div v-else class="tbl-area"><div class="tbl-scroll">
+      <table>
+        <thead>
+          <tr class="ch">
+            <th>商品<span style="font-size:9px;font-weight:400;color:var(--muted);margin-left:5px">{{ tableDate }}<template v-if="tableTime"> {{ tableTime }}</template></span></th>
+            <th>成交</th><th>漲跌</th><th>幅度</th>
+            <th>最高</th><th>最低</th><th>昨收</th>
+          </tr>
+          <tr class="ir">
+            <td :class="cc(tseIdx.change)">{{ tseIdx.name }}</td>
+            <td :class="cc(tseIdx.change)">{{ fp(tseIdx.price) }}</td>
+            <td :class="cc(tseIdx.change)">{{ fc(tseIdx.change) }}</td>
+            <td :class="cc(tseIdx.change)">{{ fpct(tseIdx.pct) }}</td>
+            <td class="up">{{ fp(tseIdx.high) }}</td>
+            <td class="dn">{{ fp(tseIdx.low) }}</td>
+            <td class="neu">{{ fp(tseIdx.prevClose) }}</td>
+          </tr>
+        </thead>
+        <tbody>
+          <template v-if="misLoading">
+            <tr v-for="i in (watchlist.length || 6)" :key="'ph'+i" class="loading-row">
+              <td>--</td><td>--</td><td>--</td><td>--</td><td>--</td><td>--</td><td>--</td>
+            </tr>
+          </template>
+          <template v-else>
+            <tr v-for="s in rows" :key="s.code" @click="openDetail(s.code)">
+              <td :class="cc(s.change)">{{ s.name }}</td>
+              <td>
+                <span v-if="s.limitUp" class="lup-badge">{{ fp(s.price) }}</span>
+                <span v-else :class="cc(s.change)">{{ fp(s.price) }}</span>
+              </td>
+              <td :class="cc(s.change)">{{ fc(s.change) }}</td>
+              <td :class="cc(s.change)">{{ fpct(s.pct) }}</td>
+              <td :class="cc(s.change)">{{ fp(s.high) }}</td>
+              <td :class="cc(s.change)">{{ fp(s.low) }}</td>
+              <td class="neu">{{ fp(s.prevClose) }}</td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div></div>
+  </template>
+
+  <!-- ═══════════════ DETAIL VIEW ═══════════════ -->
+  <template v-else-if="view === 'detail'">
+    <div class="header">
+      <div class="hd-back" @click="view = 'list'" style="cursor:pointer">‹</div>
+      <div class="hd-title" style="line-height:1.25">
+        <div>{{ detailStock?.name || detailCode }}</div>
+        <div style="font-size:11px;font-weight:400;color:var(--muted)">{{ detailCode }}</div>
+      </div>
+      <div class="hd-icons"></div>
+    </div>
+
+    <div class="detail-area">
+      <div class="detail-price-sec">
+        <div class="dp-price" :class="cc(detailStock?.change)">
+          <span v-if="detailStock?.limitUp" class="lup-badge" style="font-size:34px;padding:2px 10px">{{ fp(detailStock?.price) }}</span>
+          <span v-else>{{ fp(detailStock?.price) }}</span>
+        </div>
+        <div class="dp-change" :class="cc(detailStock?.change)">{{ fc(detailStock?.change) }}&ensp;{{ fpct(detailStock?.pct) }}</div>
+        <div class="dp-status" :class="status.cls">{{ status.text }}</div>
+      </div>
+
+      <div class="detail-grid">
+        <div class="dg-item">
+          <span class="dg-lbl">開盤</span>
+          <span class="dg-val neu">{{ fp(detailStock?.open) }}</span>
+        </div>
+        <div class="dg-item">
+          <span class="dg-lbl">昨收</span>
+          <span class="dg-val neu">{{ fp(detailStock?.prevClose) }}</span>
+        </div>
+        <div class="dg-item">
+          <span class="dg-lbl">最高</span>
+          <span class="dg-val up">{{ fp(detailStock?.high) }}</span>
+        </div>
+        <div class="dg-item">
+          <span class="dg-lbl">最低</span>
+          <span class="dg-val dn">{{ fp(detailStock?.low) }}</span>
+        </div>
+        <div class="dg-item">
+          <span class="dg-lbl">漲停</span>
+          <span class="dg-val up">{{ fp(detailStock?.limitUpPx) }}</span>
+        </div>
+        <div class="dg-item">
+          <span class="dg-lbl">跌停</span>
+          <span class="dg-val dn">{{ fp(detailStock?.limitDnPx) }}</span>
+        </div>
+        <div class="dg-item dg-full">
+          <span class="dg-lbl">成交量</span>
+          <span class="dg-val neu">{{ fvol(detailStock?.vol) }} 張</span>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- ═══════════════ ADD VIEW ═══════════════ -->
+  <template v-else-if="view === 'add'">
+    <div class="header">
+      <div class="hd-back" @click="view = 'list'">‹</div>
+      <div class="hd-title">加入「{{ curGroup.name }}」</div>
+      <div class="hd-icons"></div>
+    </div>
+
+    <div class="add-area">
+      <div class="search-bar">
+        <input
+          type="search"
+          ref="searchInputEl"
+          :value="inputValue"
+          @compositionstart="onCompStart"
+          @compositionend="onCompEnd"
+          @input="onInput"
+          @keydown.enter.prevent="doSearch"
+          @search="doSearch"
+          placeholder="輸入代號或名稱…"
+          class="search-input"
+          autocomplete="off"
+          enterkeyhint="search"
+        />
+        <button class="search-btn" @click="doSearch">搜尋</button>
+      </div>
+
+      <div class="result-area">
+        <!-- 載入中 -->
+        <div v-if="listLoading" class="list-msg">載入股票清單中…</div>
+
+        <!-- 等待輸入 -->
+        <div v-else-if="!searchText.trim()" class="list-msg">
+          請輸入股票代號或名稱<br>支援上市（TSE）與上櫃（OTC）
+        </div>
+
+        <!-- 有結果 -->
+        <template v-else-if="searchResults.length > 0">
+          <div v-for="s in searchResults" :key="s.c + s.ex" class="result-item">
+            <span class="ri-code" :class="inWatchlist(s.c) ? 'neu' : ''">{{ s.c }}</span>
+            <span class="ri-name">{{ s.n }}</span>
+            <span class="ri-ex">{{ s.ex.toUpperCase() }}</span>
+            <span v-if="inWatchlist(s.c)" class="ri-added">✓</span>
+            <button v-else class="ri-add" @click="addStock(s.c)">加入</button>
+          </div>
+        </template>
+
+        <!-- 無結果 -->
+        <template v-else>
+          <div class="list-msg">找不到「{{ searchText }}」</div>
+          <!-- 直接加入（代號格式） -->
+          <div v-if="showDirectAdd" class="direct-card">
+            <span class="dc-code">{{ searchText.trim().toUpperCase() }}</span>
+            <span class="dc-desc">{{ directStatus === 'checking' ? '驗證中…' : directStatus === 'not_found' ? '此代號不存在' : directStatus === 'error' ? '連線失敗' : '不在清單中，要直接加入嗎？' }}</span>
+            <button
+              class="dc-btn"
+              :disabled="directStatus === 'checking' || directStatus === 'added'"
+              @click="directAdd"
+            >{{ directStatus === 'added' ? '✓ 已加入' : '直接加入' }}</button>
+          </div>
+        </template>
+      </div>
+    </div>
+  </template>
+
+  <!-- ═══════════════ BOTTOM NAV（共用） ═══════════════ -->
+  <div class="bnav">
+    <div class="bnav-item" :class="{ on: view==='list'||view==='detail' }" @click="view='list'">
+      <span class="bnav-ico">★</span><span class="bnav-lbl">自選股</span>
+    </div>
+    <div class="bnav-item">
+      <span class="bnav-ico">≋</span><span class="bnav-lbl">大盤動態</span>
+    </div>
+    <div class="bnav-item" :class="{ on: view==='add' }" @click="openAdd">
+      <span class="bnav-ico">⊕</span><span class="bnav-lbl">加入自選</span>
+    </div>
+    <div class="bnav-item">
+      <span class="bnav-ico">⚙</span><span class="bnav-lbl">設定</span>
+    </div>
+  </div>
+
+  <!-- ═══════════════ 群組面板（bottom sheet） ═══════════════ -->
+  <div v-if="showGroupPanel" class="overlay" @click.self="showGroupPanel = false">
+    <div class="group-sheet">
+      <div class="gs-title">切換自選群組</div>
+      <div v-for="(g, i) in groupsData.groups" :key="i"
+           class="gs-item" :class="{ cur: i === groupsData.current }">
+        <span class="gs-check">{{ i === groupsData.current ? '✓' : '' }}</span>
+
+        <!-- 改名模式 -->
+        <input v-if="editIdx === i"
+          class="gs-input" :value="editName"
+          @input="editName = $event.target.value"
+          @keydown.enter.prevent="confirmRename(i)"
+          @blur="confirmRename(i)"
+          ref="renameInputEl"
+        />
+        <!-- 一般顯示 -->
+        <span v-else class="gs-name" @click="switchGroup(i)">{{ g.name }}</span>
+
+        <span class="gs-edit" @click.stop="startRename(i)">✎</span>
+      </div>
+      <span class="gs-cancel" @click="showGroupPanel = false">取消</span>
+    </div>
+  </div>
+
+</div>
+<script>
+const { createApp, ref, computed, watch, onMounted, onUnmounted, nextTick } = Vue
+
+// ─── localStorage keys ────────────────────────────────────────────
+const GROUPS_KEY = 'stock_groups_v1'
+const CACHE_KEY  = 'stock_list_cache_v1'
+
+// ─── 預設群組 ─────────────────────────────────────────────────────
+const DEFAULT_GROUPS = {
+  current: 0,
+  groups: [
+    { name: '自選群組一', stocks: ['2330','2317','2454','2409','3481','2408','6182','6147'] },
+    { name: '自選群組二', stocks: [] },
+    { name: '自選群組三', stocks: [] },
+    { name: '自選群組四', stocks: [] },
+    { name: '自選群組五', stocks: [] },
+  ]
+}
+
+function loadGroups() {
+  try { return JSON.parse(localStorage.getItem(GROUPS_KEY)) || DEFAULT_GROUPS }
+  catch { return DEFAULT_GROUPS }
+}
+function saveGroupsToStorage(data) {
+  try { localStorage.setItem(GROUPS_KEY, JSON.stringify(data)) } catch {}
+}
+
+// ─── 台北時間工具 ─────────────────────────────────────────────────
+function getTaipeiNow() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Taipei' }))
+}
+function getTodayStr() {
+  const t = getTaipeiNow()
+  return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`
+}
+function isTradingHours() {
+  const t = getTaipeiNow(); const d = t.getDay()
+  if (d === 0 || d === 6) return false
+  const m = t.getHours()*60 + t.getMinutes()
+  return m >= 540 && m < 810
+}
+function nowHHMMSS() {
+  const t = getTaipeiNow()
+  return [t.getHours(), t.getMinutes(), t.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':')
+}
+function getTodayDisplayStr() {
+  const t = getTaipeiNow()
+  const days = ['日','一','二','三','四','五','六']
+  const m = String(t.getMonth()+1).padStart(2,'0')
+  const d = String(t.getDate()).padStart(2,'0')
+  return `${t.getFullYear()}/${m}/${d} 週${days[t.getDay()]}`
+}
+function todayMMDD() {
+  const t = getTaipeiNow()
+  return `${String(t.getMonth()+1).padStart(2,'0')}/${String(t.getDate()).padStart(2,'0')}`
+}
+
+// ─── 搜尋正規化（臺↔台 視同） ─────────────────────────────────────
+function norm(s) { return (s||'').replace(/臺/g,'台').toLowerCase() }
+
+// ─── Vue App ──────────────────────────────────────────────────────
+createApp({
+  setup() {
+    // ── 靜態常數 ──────────────────────────────────────────
+    const todayDate  = getTodayDisplayStr()
+    const tableDate  = todayMMDD()
+    const tableTime  = ref('')
+
+    // ── 群組 ────────────────────────────────────────────
+    const groupsData   = ref(loadGroups())
+    const curGroup     = computed(() => groupsData.value.groups[groupsData.value.current])
+    const watchlist    = computed(() => curGroup.value?.stocks ?? [])
+    const showGroupPanel = ref(false)
+    const editIdx      = ref(-1)
+    const editName     = ref('')
+    const renameInputEl = ref(null)
+
+    watch(groupsData, v => saveGroupsToStorage(v), { deep: true })
+
+    function switchGroup(idx) {
+      groupsData.value.current = idx
+      showGroupPanel.value = false
+      refresh()
+    }
+    function startRename(idx) {
+      editIdx.value = idx
+      editName.value = groupsData.value.groups[idx].name
+      nextTick(() => {
+        const el = renameInputEl.value
+        if (Array.isArray(el)) el[0]?.focus()
+        else el?.focus()
+      })
+    }
+    function confirmRename(idx) {
+      const n = editName.value.trim()
+      if (n) groupsData.value.groups[idx].name = n
+      editIdx.value = -1
+    }
+    function addStock(code) {
+      const stocks = curGroup.value.stocks
+      if (!stocks.includes(code)) {
+        stocks.push(code)
+        if (isTradingHours()) refresh()
+      }
+    }
+    function inWatchlist(code) { return curGroup.value.stocks.includes(code) }
+
+    // ── 編輯模式（刪除 / 排序） ───────────────────────────
+    const editMode = ref(false)
+    const dragIdx  = ref(-1)
+
+    function removeStock(idx) {
+      curGroup.value.stocks.splice(idx, 1)
+    }
+    function startDrag(e, idx) {
+      dragIdx.value = idx
+    }
+    function handleTouchMove(e) {
+      if (dragIdx.value === -1) return
+      e.preventDefault()
+      const touchY = e.touches[0].clientY
+      const items  = document.querySelectorAll('[data-edit-idx]')
+      for (let i = 0; i < items.length; i++) {
+        if (i === dragIdx.value) continue
+        const rect = items[i].getBoundingClientRect()
+        const mid  = rect.top + rect.height / 2
+        if ((i < dragIdx.value && touchY < mid) || (i > dragIdx.value && touchY > mid)) {
+          const stocks = [...curGroup.value.stocks]
+          const [moved] = stocks.splice(dragIdx.value, 1)
+          stocks.splice(i, 0, moved)
+          curGroup.value.stocks = stocks
+          dragIdx.value = i
+          break
+        }
+      }
+    }
+    function handleTouchEnd() { dragIdx.value = -1 }
+
+    // ── 詳情頁 ────────────────────────────────────────────
+    const detailCode  = ref('')
+    const detailStock = computed(() => stockMap.value[detailCode.value] || null)
+    function openDetail(code) { detailCode.value = code; view.value = 'detail' }
+
+    // ── 主畫面狀態 ────────────────────────────────────────
+    const tab      = ref('即時')
+    const tabs     = ['即時', '法人', '信用', '營收']
+    const view     = ref('list')
+    const misLoading = ref(true)
+    const stockMap = ref({})
+    const idxData  = ref({})
+    const lastPx   = {}
+    const status   = ref({ text: '載入中…', cls: '' })
+
+    const EMPTY_IDX = { name:'加權指', price:null, change:null, pct:null, high:null, low:null, prevClose:null }
+    const tseIdx  = computed(() => idxData.value['t00'] ?? EMPTY_IDX)
+    const indexBar = computed(() => [
+      { key:'tse', name:'加權', ...pick(idxData.value['t00'],'value','change','pct') },
+      { key:'otc', name:'櫃買', ...pick(idxData.value['o00'],'value','change','pct') },
+    ])
+    const rows = computed(() => watchlist.value.map(c => stockMap.value[c]).filter(Boolean))
+
+    // ── 解析 MIS ─────────────────────────────────────────
+    function parseMis(data) {
+      const ns = {...stockMap.value}, ni = {...idxData.value}
+      for (const item of (data.msgArray||[])) {
+        const code = item.c; if (!code) continue
+        const rawZ = item.z, prev = parseFloat(item.y)||0
+        let price
+        if (!rawZ || rawZ==='-') {
+          price = lastPx[code]!=null ? lastPx[code] : prev
+        } else {
+          price = parseFloat(rawZ); lastPx[code] = price
+        }
+        const high = parseFloat(item.h)||price, low = parseFloat(item.l)||price
+        const open = parseFloat(item.o)||null
+        const chg  = (price!=null && prev) ? price-prev : null
+        const pct  = (chg!=null && prev)   ? chg/prev*100 : null
+        if (code==='t00'||code==='o00') {
+          ni[code] = { name:code==='t00'?'加權指':'櫃買指',
+            value:price, price, prevClose:prev, high, low, change:chg, pct }
+          continue
+        }
+        const lup = parseFloat(item.u)||null
+        const ldn = (lup!=null && prev) ? Math.round((2*prev-lup)*100)/100 : null
+        if (!ns[code]||(price>0)) {
+          ns[code] = { code, name:item.n||item.nf||code,
+            price, prevClose:prev, open, high, low, vol:parseInt(item.v)||0,
+            change:chg, pct, limitUpPx:lup, limitDnPx:ldn,
+            limitUp: lup!=null && Math.abs(price-lup)<0.01 }
+        }
+      }
+      stockMap.value = ns; idxData.value = ni
+    }
+
+    // ── 解析 OpenAPI 收盤（fallback）────────────────────
+    function parseOpenApi(tse, otc) {
+      const ns = {}
+      for (const item of (tse||[])) {
+        const code=(item.Code||'').trim(), cl=parseFloat(item.ClosingPrice), chg=parseFloat(item.Change)||0
+        if (!code||isNaN(cl)||cl<=0) continue
+        ns[code]={ code, name:item.Name, price:cl, prevClose:cl-chg,
+          open:parseFloat(item.OpeningPrice)||null,
+          high:parseFloat(item.HighestPrice)||cl, low:parseFloat(item.LowestPrice)||cl,
+          vol:Math.round((parseInt(item.TradeVolume)||0)/1000),
+          change:chg, pct:(cl-chg)>0?chg/(cl-chg)*100:0,
+          limitUpPx:null, limitDnPx:null, limitUp:false }
+      }
+      for (const item of (otc||[])) {
+        const code=(item.SecuritiesCompanyCode||'').trim(), cl=parseFloat(item.Close)
+        const raw=item.Change, chg=(raw&&raw!=='---')?parseFloat(raw):0
+        if (!code||isNaN(cl)||cl<=0) continue
+        ns[code]={ code, name:item.CompanyName, price:cl, prevClose:cl-chg,
+          open:parseFloat(item.Open)||null,
+          high:parseFloat(item.High)||cl, low:parseFloat(item.Low)||cl,
+          vol:Math.round((parseInt(item.TradingShares)||0)/1000),
+          change:!isNaN(chg)?chg:0, pct:(!isNaN(chg)&&(cl-chg)>0)?chg/(cl-chg)*100:0,
+          limitUpPx:null, limitDnPx:null, limitUp:false }
+      }
+      const filtered = {}
+      watchlist.value.forEach(c => { if (ns[c]) filtered[c]=ns[c] })
+      stockMap.value = filtered
+    }
+
+    function buildExCh() {
+      const parts = []
+      for (const c of watchlist.value) parts.push(`tse_${c}.tw`,`otc_${c}.tw`)
+      parts.push('tse_t00.tw','otc_o00.tw')
+      return parts.join('|')
+    }
+
+    async function fetchMis() {
+      const r = await fetch(`/proxy/mis?ex_ch=${encodeURIComponent(buildExCh())}`)
+      if (!r.ok) throw new Error('MIS '+r.status)
+      const d = await r.json(); if (!d.msgArray) throw new Error('no msgArray')
+      parseMis(d); misLoading.value = false
+      const hms = nowHHMMSS(); tableTime.value = hms.slice(0,5)
+      status.value = { text:`● ${hms}`, cls:'live' }
+    }
+    async function fetchFallback() {
+      const [r1,r2] = await Promise.allSettled([
+        fetch('/proxy/twse').then(r=>r.json()),
+        fetch('/proxy/tpex').then(r=>r.json()),
+      ])
+      parseOpenApi(r1.status==='fulfilled'?r1.value:[],r2.status==='fulfilled'?r2.value:[])
+      misLoading.value = false
+      tableTime.value = nowHHMMSS().slice(0,5)
+      status.value = { text:`收盤資料 ${todayMMDD()}`, cls:'close' }
+    }
+
+    let timer = null
+    async function refresh() {
+      if (timer) { clearTimeout(timer); timer=null }
+      try { await fetchMis() }
+      catch(e) {
+        console.warn('[MIS]',e.message)
+        if (!Object.keys(stockMap.value).length) {
+          try { await fetchFallback() }
+          catch { misLoading.value=false; status.value={text:'連線失敗',cls:'err'} }
+        } else { status.value={text:'更新失敗',cls:'err'} }
+      }
+      if (isTradingHours()) timer = setTimeout(refresh, 10_000)
+    }
+    onMounted(() => {
+      document.addEventListener('touchmove', handleTouchMove, { passive: false })
+      document.addEventListener('touchend',  handleTouchEnd)
+      refresh()
+    })
+    onUnmounted(() => {
+      document.removeEventListener('touchmove', handleTouchMove)
+      document.removeEventListener('touchend',  handleTouchEnd)
+      if (timer) clearTimeout(timer)
+    })
+
+    // ── 加入自選 view ─────────────────────────────────────
+    const stockList   = ref([])   // [{c, n, ex}]
+    const listLoading = ref(false)
+    const inputValue  = ref('')
+    const searchText  = ref('')
+    let   composing   = false
+    const directStatus = ref('idle')
+    const searchInputEl = ref(null)
+
+    async function loadStockList() {
+      if (stockList.value.length) return    // already loaded
+      const today = getTodayStr()
+      try {
+        const cached = JSON.parse(localStorage.getItem(CACHE_KEY)||'{}')
+        if (cached.date===today && Array.isArray(cached.list) && cached.list.length) {
+          stockList.value = cached.list; return
+        }
+      } catch {}
+      listLoading.value = true
+      const [r1,r2] = await Promise.allSettled([
+        fetch('/proxy/twse').then(r=>r.json()),
+        fetch('/proxy/tpex').then(r=>r.json()),
+      ])
+      const list = []
+      if (r1.status==='fulfilled') {
+        for (const item of (r1.value||[])) {
+          const c=(item.Code||'').trim(), n=item.Name
+          if (c&&n) list.push({ c, n, ex:'tse' })
+        }
+      }
+      if (r2.status==='fulfilled') {
+        for (const item of (r2.value||[])) {
+          const c=(item.SecuritiesCompanyCode||'').trim(), n=item.CompanyName
+          if (c&&n) list.push({ c, n, ex:'otc' })
+        }
+      }
+      stockList.value = list
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ date:today, list })) } catch {}
+      listLoading.value = false
+    }
+
+    function openAdd() {
+      view.value = 'add'
+      loadStockList()
+    }
+
+    // IME 處理
+    function onCompStart() { composing = true }
+    function onCompEnd(e) {
+      composing = false
+      inputValue.value = e.target.value
+      searchText.value = e.target.value
+    }
+    function onInput(e) {
+      inputValue.value = e.target.value
+      if (!composing) searchText.value = e.target.value
+    }
+    function doSearch() {
+      const el = searchInputEl.value
+      if (el) { searchText.value = el.value; inputValue.value = el.value }
+    }
+
+    const searchResults = computed(() => {
+      const q = norm(searchText.value.trim())
+      if (!q) return []
+      const matched = stockList.value.filter(s => {
+        const c = (s.c||'').toLowerCase()
+        const n = norm(s.n||'')
+        return c.startsWith(q)||c.includes(q)||n.includes(q)
+      })
+      // 精確代號排最前
+      matched.sort((a,b) => {
+        const ac=(a.c||'').toLowerCase(), bc=(b.c||'').toLowerCase()
+        if (ac===q) return -1; if (bc===q) return 1
+        if (ac.startsWith(q)&&!bc.startsWith(q)) return -1
+        if (bc.startsWith(q)&&!ac.startsWith(q)) return 1
+        return 0
+      })
+      return matched.slice(0,60)
+    })
+
+    const showDirectAdd = computed(() => {
+      if (searchResults.value.length > 0) return false
+      const q = searchText.value.trim()
+      return q.length>=4 && /^[0-9A-Za-z]{4,8}$/.test(q)
+    })
+
+    async function directAdd() {
+      const code = searchText.value.trim().toUpperCase()
+      directStatus.value = 'checking'
+      try {
+        const exCh = `tse_${code}.tw|otc_${code}.tw`
+        const r = await fetch(`/proxy/mis?ex_ch=${encodeURIComponent(exCh)}`)
+        const d = await r.json()
+        const found = (d.msgArray||[]).find(item => item.c===code && item.c)
+        if (found) { addStock(code); directStatus.value = 'added' }
+        else        directStatus.value = 'not_found'
+      } catch { directStatus.value = 'error' }
+    }
+
+    // 切換搜尋時重設直接加入狀態
+    watch(searchText, () => { directStatus.value = 'idle' })
+
+    // ── 格式化 ────────────────────────────────────────────
+    const cc   = n => n==null?'neu': n>0?'up': n<0?'dn':'flat'
+    const fp   = n => (n==null||isNaN(n))?'--': Number(n).toFixed(2)
+    const fc   = n => (n==null||isNaN(n))?'--': (n>0?'+':'')+n.toFixed(2)
+    const fpct = n => (n==null||isNaN(n))?'--': (n>0?'+':'')+n.toFixed(2)+'%'
+    const fvol = n => !n?'--': n>=10000?(n/10000).toFixed(1)+'萬': n.toLocaleString()
+
+    return {
+      todayDate, tableDate, tableTime,
+      // groups
+      groupsData, curGroup, watchlist, showGroupPanel,
+      editIdx, editName, renameInputEl,
+      switchGroup, startRename, confirmRename, addStock, inWatchlist,
+      // edit mode
+      editMode, dragIdx, removeStock, startDrag,
+      // views
+      view, tab, tabs, openAdd,
+      // detail
+      detailCode, detailStock, openDetail,
+      // list
+      misLoading, tseIdx, indexBar, rows, status, stockMap,
+      // search
+      stockList, listLoading, inputValue, searchText,
+      searchResults, showDirectAdd, directStatus, searchInputEl,
+      onCompStart, onCompEnd, onInput, doSearch, directAdd,
+      // format
+      cc, fp, fc, fpct, fvol,
+    }
+  }
+}).mount('#app')
+
+function pick(obj, ...keys) {
+  if (!obj) return Object.fromEntries(keys.map(k=>[k,null]))
+  return Object.fromEntries(keys.map(k=>[k,obj[k]??null]))
+}
+</script>
+</body>
+</html>
