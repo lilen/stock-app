@@ -931,13 +931,51 @@ createApp({
       status.value = { text:`● ${hms}`, cls:'live' }
       savePriceCache()
     }
+    // 證交所主站（www.twse.com.tw）收盤後就更新且有開 CORS；openapi.twse.com.tw 常晚一天，只當備援
+    const TWSE_DAY_CSV = 'https://www.twse.com.tw/exchangeReport/STOCK_DAY_ALL?response=open_data'
+    const TWSE_IDX_JSON = 'https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?response=json&type=IND'
+    const rocToMMDD = d => { const s = String(d||'').trim(); return s.length >= 7 ? s.slice(-4,-2)+'/'+s.slice(-2) : '' }
+
+    // CSV：日期,證券代號,證券名稱,成交股數,成交金額,開盤價,最高價,最低價,收盤價,漲跌價差,成交筆數
+    async function fetchTwseDay() {
+      if (!isLocal) {
+        try {
+          const text = await (await timedFetch(TWSE_DAY_CSV, 15000)).text()
+          const list = text.split('\n').slice(1).map(line => {
+            const f = line.trim().replace(/^"|"$/g,'').split('","')
+            return f.length >= 10 ? { Date:f[0], Code:f[1], Name:f[2], TradeVolume:f[3],
+              OpeningPrice:f[5], HighestPrice:f[6], LowestPrice:f[7], ClosingPrice:f[8], Change:f[9] } : null
+          }).filter(Boolean)
+          if (list.length) return list
+        } catch (e) { console.warn('[TWSE CSV]', e.message) }
+      }
+      return fetchJsonList(TWSE_URL)
+    }
+    // 回傳與 openapi MI_INDEX 相同欄位的陣列，方便共用解析
+    async function fetchTwseIndex() {
+      if (!isLocal) {
+        try {
+          const j = await (await timedFetch(TWSE_IDX_JSON, 10000)).json()
+          const out = []
+          for (const t of (j.tables||[])) for (const r of (t.data||[])) {
+            out.push({ '日期': j.date, '指數': r[0], '收盤指數': String(r[1]).replace(/,/g,''),
+              '漲跌': /-/.test(String(r[2]).replace(/<[^>]*>/g,'')) ? '-' : '+',
+              '漲跌點數': String(r[3]).replace(/,/g,''), '漲跌百分比': r[4] })
+          }
+          if (out.length) return out
+        } catch (e) { console.warn('[TWSE IDX]', e.message) }
+      }
+      return fetchJsonList(MI_IDX_URL)
+    }
+
     async function fetchFallback() {
       const [r1,r2,r3] = await Promise.allSettled([
-        fetchJsonList(TWSE_URL),
+        fetchTwseDay(),
         fetchJsonList(TPEX_URL),
-        fetchJsonList(MI_IDX_URL),
+        fetchTwseIndex(),
       ])
-      parseOpenApi(r1.status==='fulfilled'?r1.value:[],r2.status==='fulfilled'?r2.value:[])
+      const tse = r1.status==='fulfilled'?r1.value:[], otc = r2.status==='fulfilled'?r2.value:[]
+      parseOpenApi(tse, otc)
       if (r3.status==='fulfilled' && Array.isArray(r3.value)) {
         const ni = {...idxData.value}
         // 欄位名稱已改為中文（指數／收盤指數／漲跌／漲跌點數／漲跌百分比），漲跌方向另放在「漲跌」
@@ -957,7 +995,9 @@ createApp({
       }
       misLoading.value = false
       tableTime.value = nowHHMMSS().slice(0,5)
-      status.value = { text:`收盤資料 ${todayMMDD()}`, cls:'close' }
+      // 顯示資料實際日期，避免把前一日收盤誤標成今天
+      const dataDate = rocToMMDD(tse[0]?.Date) || rocToMMDD(otc[0]?.Date) || todayMMDD()
+      status.value = { text:`收盤資料 ${dataDate}`, cls:'close' }
       savePriceCache()
     }
 
