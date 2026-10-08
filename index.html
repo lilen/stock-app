@@ -129,6 +129,9 @@
     .gs-edit  { padding:4px 8px; color:var(--muted); font-size:16px; cursor:pointer; flex-shrink:0; }
     .gs-input { flex:1; background:#2a2a2a; border:1px solid var(--orange);
       border-radius:6px; padding:4px 10px; color:var(--text); font-size:15px; outline:none; }
+    .sync-ic.ok   { color:var(--green); }
+    .sync-ic.busy { color:var(--orange); }
+    .sync-ic.err  { color:var(--red); }
     .gs-cancel { display:block; text-align:center; padding:16px;
       color:var(--muted); font-size:15px; cursor:pointer; border-top:1px solid var(--line); }
 
@@ -179,7 +182,7 @@
           <span style="font-size:14px;color:var(--orange);font-weight:600;cursor:pointer" @click="editMode=false">完成</span>
         </template>
         <template v-else>
-          <span style="font-size:18px;line-height:1">≡</span>
+          <span class="sync-ic" :class="syncState" style="font-size:16px;line-height:1.2;cursor:pointer" @click="openSync">☁</span>
           <span style="font-size:14px;cursor:pointer" @click="editMode=true">✎</span>
         </template>
       </div>
@@ -485,6 +488,28 @@
     </div>
   </div>
 
+  <!-- ═══════════════ 雲端同步設定 ═══════════════ -->
+  <div v-if="showSync" class="overlay" @click.self="showSync = false">
+    <div class="group-sheet">
+      <div class="gs-title">多裝置同步自選股</div>
+      <div style="padding:14px 16px;font-size:13px;line-height:1.6;color:var(--muted)">
+        貼上 Google Apps Script 網頁應用程式網址，所有填同一個網址的手機會共用自選股。
+        <input class="gs-input" style="display:block;width:100%;margin:10px 0;box-sizing:border-box"
+               v-model="syncInput" placeholder="https://script.google.com/macros/s/…/exec" />
+        <div>狀態：<span class="sync-ic" :class="syncState">{{ syncMsg }}</span></div>
+        <div v-if="syncUrl" style="margin-top:10px">
+          其他手機開這個連結即可自動設定：
+          <div style="word-break:break-all;color:var(--text);user-select:all;margin-top:4px">{{ syncShareLink }}</div>
+          <span class="dc-btn" style="display:inline-block;margin-top:8px" @click="copyShareLink">{{ copied ? '已複製' : '複製連結' }}</span>
+        </div>
+      </div>
+      <div style="display:flex">
+        <span class="gs-cancel" style="flex:1" @click="showSync = false">取消</span>
+        <span class="gs-cancel" style="flex:1;color:var(--orange)" @click="saveSyncUrl">儲存</span>
+      </div>
+    </div>
+  </div>
+
 </div>
 <script>
 const { createApp, ref, computed, watch, onMounted, onUnmounted, nextTick } = Vue
@@ -508,6 +533,8 @@ const GROUPS_KEY      = 'stock_groups_v1'
 const CACHE_KEY       = 'stock_list_cache_v3'
 const PRICE_CACHE_KEY = 'stock_price_v1'
 const NAME_MAP_KEY    = 'stock_names_v1'
+const SYNC_URL_KEY    = 'stock_sync_url_v1'
+const SYNC_TS_KEY     = 'stock_sync_ts_v1'
 
 // ─── 預設群組 ─────────────────────────────────────────────────────
 const DEFAULT_GROUPS = {
@@ -587,6 +614,108 @@ createApp({
     const renameInputEl = ref(null)
 
     watch(groupsData, v => saveGroupsToStorage(v), { deep: true })
+
+    // ── 雲端同步（多裝置共用群組；目前所在群組各裝置獨立） ──
+    const syncUrl    = ref((() => { try { return localStorage.getItem(SYNC_URL_KEY) || '' } catch { return '' } })())
+    const hashSync   = location.hash.match(/sync=([^&]+)/)
+    if (hashSync) {
+      syncUrl.value = decodeURIComponent(hashSync[1])
+      try { localStorage.setItem(SYNC_URL_KEY, syncUrl.value) } catch {}
+      history.replaceState(null, '', location.pathname + location.search)
+    }
+    const showSync   = ref(false)
+    const syncInput  = ref('')
+    const syncState  = ref('')
+    const syncMsg    = ref(syncUrl.value ? '連線中…' : '未設定（僅存在本機）')
+    const copied     = ref(false)
+    const syncShareLink = computed(() => location.origin + location.pathname + '#sync=' + encodeURIComponent(syncUrl.value))
+    let localTs = (() => { try { return Number(localStorage.getItem(SYNC_TS_KEY)) || 0 } catch { return 0 } })()
+    let applyingRemote = false
+    let pushTimer = null
+
+    function setLocalTs(ts) {
+      localTs = ts
+      try { localStorage.setItem(SYNC_TS_KEY, String(ts)) } catch {}
+    }
+    function setSync(state, msg) { syncState.value = state; syncMsg.value = msg }
+
+    watch(() => groupsData.value.groups, () => {
+      if (applyingRemote) return
+      setLocalTs(Date.now())
+      if (!syncUrl.value) return
+      clearTimeout(pushTimer)
+      pushTimer = setTimeout(push, 800)
+    }, { deep: true, flush: 'sync' })
+
+    function applyRemote(d) {
+      applyingRemote = true
+      groupsData.value = {
+        current: Math.min(groupsData.value.current, d.groups.length - 1),
+        groups: d.groups,
+      }
+      applyingRemote = false
+      if (d.names && Object.keys(d.names).length) {
+        nameMap.value = { ...nameMap.value, ...d.names }
+        try { localStorage.setItem(NAME_MAP_KEY, JSON.stringify(nameMap.value)) } catch {}
+      }
+      setLocalTs(d.updatedAt)
+      refresh()
+    }
+
+    async function pull() {
+      if (!syncUrl.value || pushTimer) return
+      setSync('busy', '同步中…')
+      try {
+        const d = await (await timedFetch(syncUrl.value, 15000)).json()
+        if (pushTimer) return  // 下載期間本機又有修改，交給 push 處理
+        if (d.groups && d.updatedAt > localTs) applyRemote(d)
+        else if (!d.groups || localTs > d.updatedAt) return push()
+        setSync('ok', '已同步 ' + nowHHMMSS())
+      } catch { setSync('err', '同步失敗，請確認網址與網路') }
+    }
+
+    async function push() {
+      clearTimeout(pushTimer); pushTimer = null
+      if (!syncUrl.value) return
+      setSync('busy', '上傳中…')
+      const groups = groupsData.value.groups
+      const names = {}
+      for (const g of groups) for (const c of g.stocks) {
+        const n = nameMap.value[c] || stockMap.value[c]?.name
+        if (n) names[c] = n
+      }
+      try {
+        const res = await fetch(syncUrl.value, {
+          method: 'POST',  // body 為字串 → text/plain，不觸發 CORS preflight
+          body: JSON.stringify({ updatedAt: localTs, groups, names }),
+        })
+        const d = await res.json()
+        if (!d.ok && d.groups && d.updatedAt > localTs) applyRemote(d)
+        setSync('ok', '已同步 ' + nowHHMMSS())
+      } catch { setSync('err', '上傳失敗，稍後會再試') }
+    }
+
+    function openSync() {
+      syncInput.value = syncUrl.value
+      copied.value = false
+      showSync.value = true
+    }
+    function saveSyncUrl() {
+      const u = syncInput.value.trim()
+      if (u && !/^https:\/\/script\.google(usercontent)?\.com\//.test(u)) {
+        setSync('err', '網址格式不對，應為 https://script.google.com/… 開頭')
+        return
+      }
+      syncUrl.value = u
+      try { localStorage.setItem(SYNC_URL_KEY, u) } catch {}
+      if (u) pull()
+      else setSync('', '未設定（僅存在本機）')
+      showSync.value = false
+    }
+    async function copyShareLink() {
+      try { await navigator.clipboard.writeText(syncShareLink.value); copied.value = true } catch {}
+    }
+    function onVisible() { if (document.visibilityState === 'visible') pull() }
 
     function switchGroup(idx) {
       groupsData.value.current = idx
@@ -828,10 +957,13 @@ createApp({
       loadPriceCache()
       refresh()
       loadStockList()
+      pull()
+      document.addEventListener('visibilitychange', onVisible)
     })
     onUnmounted(() => {
       document.removeEventListener('touchmove', handleTouchMove)
       document.removeEventListener('touchend',  handleTouchEnd)
+      document.removeEventListener('visibilitychange', onVisible)
       if (timer) clearTimeout(timer)
     })
 
@@ -1096,6 +1228,9 @@ createApp({
       nameMap, groupsData, curGroup, watchlist, showGroupPanel,
       editIdx, editName, renameInputEl,
       switchGroup, startRename, confirmRename, addStock, inWatchlist,
+      // sync
+      syncUrl, showSync, syncInput, syncState, syncMsg, syncShareLink, copied,
+      openSync, saveSyncUrl, copyShareLink,
       // edit mode
       editMode, dragIdx, removeStock, startDrag,
       // views
