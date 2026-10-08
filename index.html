@@ -406,8 +406,13 @@
         <!-- 等待輸入 -->
         <div v-else-if="!searchText.trim()" class="list-msg">
           請輸入股票代號或名稱<br>
-          <span v-if="stockList.length" style="font-size:11px;color:var(--muted)">已載入 {{ stockList.length.toLocaleString() }} 支股票</span>
-          <span v-else style="font-size:11px;color:var(--red)">清單載入失敗，請稍後再進入</span>
+          <span v-if="stockList.length" style="font-size:11px;color:var(--muted)">
+            上市 {{ listCounts.tse }} 支 / 上櫃 {{ listCounts.otc }} 支
+            <span @click="reloadStockList" style="color:var(--orange);margin-left:8px;cursor:pointer">重新載入</span>
+          </span>
+          <span v-else style="font-size:11px;color:var(--red)">清單載入失敗
+            <span @click="reloadStockList" style="color:var(--orange);margin-left:8px;cursor:pointer">重試</span>
+          </span>
         </div>
 
         <!-- 有結果 -->
@@ -500,7 +505,7 @@ const OTC_MARGIN_URL   = isLocal ? '/proxy/otc_margin'   : 'https://www.tpex.org
 
 // ─── localStorage keys ────────────────────────────────────────────
 const GROUPS_KEY      = 'stock_groups_v1'
-const CACHE_KEY       = 'stock_list_cache_v2'
+const CACHE_KEY       = 'stock_list_cache_v3'
 const PRICE_CACHE_KEY = 'stock_price_v1'
 
 // ─── 預設群組 ─────────────────────────────────────────────────────
@@ -824,6 +829,7 @@ createApp({
     // ── 加入自選 view ─────────────────────────────────────
     const stockList    = ref([])
     const listLoading  = ref(false)
+    const listCounts   = ref({ tse:0, otc:0 })
     const searchText   = ref('')
     const searchRef    = ref(null)
     const directStatus = ref('idle')
@@ -834,13 +840,13 @@ createApp({
         if (!r.ok) throw new Error(r.status)
         return r.json()
       }
+      const tryUrl = u => timedFetch(u, 15000)
+        .then(r => { if (!r.ok) throw new Error(r.status); return r.json() })
+        .then(d => { if (!Array.isArray(d) || !d.length) throw new Error('empty'); return d })
       return Promise.any([
-        timedFetch(url, 12000)
-          .then(r => { if (!r.ok) throw new Error(r.status); return r.json() })
-          .then(d => { if (!Array.isArray(d) || !d.length) throw new Error('empty'); return d }),
-        timedFetch(`https://corsproxy.io/?${encodeURIComponent(url)}`, 12000)
-          .then(r => { if (!r.ok) throw new Error(r.status); return r.json() })
-          .then(d => { if (!Array.isArray(d) || !d.length) throw new Error('empty'); return d }),
+        tryUrl(url),
+        tryUrl(`https://corsproxy.io/?${encodeURIComponent(url)}`),
+        tryUrl(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`),
       ])
     }
 
@@ -860,20 +866,22 @@ createApp({
         fetchJsonList(TPEX_URL),
       ])
       const list = []
+      let tse = 0, otc = 0
       if (r1.status==='fulfilled') {
         for (const item of (r1.value||[])) {
           const c=(item.Code||'').trim(), n=item.Name
-          if (c&&n) list.push({ c, n, ex:'tse' })
+          if (c&&n) { list.push({ c, n, ex:'tse' }); tse++ }
         }
       }
       if (r2.status==='fulfilled') {
         for (const item of (r2.value||[])) {
           const c=(item.SecuritiesCompanyCode||'').trim(), n=item.CompanyName
-          if (c&&n) list.push({ c, n, ex:'otc' })
+          if (c&&n) { list.push({ c, n, ex:'otc' }); otc++ }
         }
       }
       if (list.length) {
         stockList.value = list
+        listCounts.value = { tse, otc }
         try { localStorage.setItem(CACHE_KEY, JSON.stringify({ date:today, list })) } catch {}
       } else {
         // 抓取失敗 → 沿用舊快取（即使日期不同）
@@ -883,6 +891,12 @@ createApp({
         } catch {}
       }
       listLoading.value = false
+    }
+
+    function reloadStockList() {
+      stockList.value = []
+      listCounts.value = { tse:0, otc:0 }
+      loadStockList()
     }
 
     function openAdd() {
@@ -1059,8 +1073,8 @@ createApp({
       // list
       misLoading, tseIdx, indexBar, rows, status, stockMap,
       // search
-      stockList, listLoading, searchText, searchRef,
-      searchResults, showDirectAdd, directStatus, directAdd,
+      stockList, listLoading, listCounts, searchText, searchRef,
+      searchResults, showDirectAdd, directStatus, directAdd, reloadStockList,
       // institutional
       instMap, instLoading, instRows,
       // margin
