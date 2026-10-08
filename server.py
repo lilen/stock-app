@@ -32,6 +32,22 @@ class Handler(BaseHTTPRequestHandler):
             self._proxy('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL')
         elif path == '/proxy/tpex':
             self._proxy('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes')
+        elif path == '/proxy/inst_foreign':
+            self._proxy('https://openapi.twse.com.tw/v1/fund/MI_QFIIS')
+        elif path == '/proxy/inst_trust':
+            self._proxy('https://openapi.twse.com.tw/v1/fund/TWT93U')
+        elif path == '/proxy/inst_dealer':
+            self._proxy('https://openapi.twse.com.tw/v1/fund/MI_PROPRIETARY')
+        elif path == '/proxy/otc_foreign':
+            self._proxy('https://www.tpex.org.tw/openapi/v1/tpex_qfii_trn')
+        elif path == '/proxy/otc_trust':
+            self._proxy('https://www.tpex.org.tw/openapi/v1/tpex_trust_fund_trn')
+        elif path == '/proxy/otc_dealer':
+            self._proxy('https://www.tpex.org.tw/openapi/v1/tpex_dealer_trn')
+        elif path == '/proxy/margin':
+            self._proxy('https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_d')
+        elif path == '/proxy/otc_margin':
+            self._proxy('https://www.tpex.org.tw/openapi/v1/tpex_margin_trn')
         else:
             self._static(path)
 

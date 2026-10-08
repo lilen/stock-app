@@ -214,8 +214,8 @@
       <div v-if="!watchlist.length" class="list-msg">此群組尚無自選股</div>
     </div>
 
-    <!-- 一般表格 -->
-    <div v-else class="tbl-area"><div class="tbl-scroll">
+    <!-- 即時 表格 -->
+    <div v-else-if="tab === '即時'" class="tbl-area"><div class="tbl-scroll">
       <table>
         <thead>
           <tr class="ch">
@@ -256,6 +256,69 @@
         </tbody>
       </table>
     </div></div>
+
+    <!-- 法人 表格 -->
+    <div v-else-if="tab === '法人'" class="tbl-area"><div class="tbl-scroll">
+      <table>
+        <thead>
+          <tr class="ch">
+            <th>商品</th>
+            <th>外資</th><th>投信</th><th>自營</th><th>合計</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template v-if="instLoading">
+            <tr v-for="i in (watchlist.length||6)" :key="'iph'+i" class="loading-row">
+              <td>--</td><td>--</td><td>--</td><td>--</td><td>--</td>
+            </tr>
+          </template>
+          <template v-else>
+            <tr v-for="s in instRows" :key="s.code" @click="openDetail(s.code)">
+              <td>{{ s.name }}</td>
+              <td :class="cc(s.foreign)">{{ fchg(s.foreign) }}</td>
+              <td :class="cc(s.trust)">{{ fchg(s.trust) }}</td>
+              <td :class="cc(s.dealer)">{{ fchg(s.dealer) }}</td>
+              <td :class="cc(s.total)" style="font-weight:600">{{ fchg(s.total) }}</td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div></div>
+
+    <!-- 信用 表格 -->
+    <div v-else-if="tab === '信用'" class="tbl-area"><div class="tbl-scroll">
+      <table>
+        <thead>
+          <tr class="ch">
+            <th>商品</th>
+            <th>融資餘額</th><th>融資+-</th><th>融券餘額</th><th>融券+-</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template v-if="marginLoading">
+            <tr v-for="i in (watchlist.length||6)" :key="'mph'+i" class="loading-row">
+              <td>--</td><td>--</td><td>--</td><td>--</td><td>--</td>
+            </tr>
+          </template>
+          <template v-else>
+            <tr v-for="s in marginRows" :key="s.code" @click="openDetail(s.code)">
+              <td>{{ s.name }}</td>
+              <td class="neu">{{ flot(s.marginBal) }}</td>
+              <td :class="cc(s.marginChg)">{{ fchg(s.marginChg) }}</td>
+              <td class="neu">{{ flot(s.shortBal) }}</td>
+              <td :class="cc(s.shortChg)">{{ fchg(s.shortChg) }}</td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div></div>
+
+    <!-- 營收 佔位 -->
+    <div v-else class="tbl-area" style="display:flex;align-items:center;justify-content:center">
+      <div style="color:var(--muted);font-size:13px;text-align:center;line-height:2.2">
+        月營收功能<br>開發中
+      </div>
+    </div>
   </template>
 
   <!-- ═══════════════ DETAIL VIEW ═══════════════ -->
@@ -426,6 +489,14 @@ const { createApp, ref, computed, watch, onMounted, onUnmounted, nextTick } = Vu
 const isLocal  = ['localhost','127.0.0.1'].includes(location.hostname)
 const TWSE_URL = isLocal ? '/proxy/twse' : 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'
 const TPEX_URL = isLocal ? '/proxy/tpex' : 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes'
+const INST_FOREIGN_URL = isLocal ? '/proxy/inst_foreign' : 'https://openapi.twse.com.tw/v1/fund/MI_QFIIS'
+const INST_TRUST_URL   = isLocal ? '/proxy/inst_trust'   : 'https://openapi.twse.com.tw/v1/fund/TWT93U'
+const INST_DEALER_URL  = isLocal ? '/proxy/inst_dealer'  : 'https://openapi.twse.com.tw/v1/fund/MI_PROPRIETARY'
+const OTC_FOREIGN_URL  = isLocal ? '/proxy/otc_foreign'  : 'https://www.tpex.org.tw/openapi/v1/tpex_qfii_trn'
+const OTC_TRUST_URL    = isLocal ? '/proxy/otc_trust'    : 'https://www.tpex.org.tw/openapi/v1/tpex_trust_fund_trn'
+const OTC_DEALER_URL   = isLocal ? '/proxy/otc_dealer'   : 'https://www.tpex.org.tw/openapi/v1/tpex_dealer_trn'
+const MARGIN_URL       = isLocal ? '/proxy/margin'       : 'https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_d'
+const OTC_MARGIN_URL   = isLocal ? '/proxy/otc_margin'   : 'https://www.tpex.org.tw/openapi/v1/tpex_margin_trn'
 
 // ─── localStorage keys ────────────────────────────────────────────
 const GROUPS_KEY = 'stock_groups_v1'
@@ -807,12 +878,118 @@ createApp({
     // 切換搜尋時重設直接加入狀態
     watch(searchText, () => { directStatus.value = 'idle' })
 
+    // ── 法人 ──────────────────────────────────────────────
+    const instMap     = ref({})
+    const instLoading = ref(false)
+
+    function parseInstitutional(foreign, trust, dealer, otcForeign, otcTrust, otcDealer) {
+      const m = {}
+      function add(arr, key, codeField, diffField) {
+        for (const item of (arr||[])) {
+          const code = (item[codeField]||'').trim(); if (!code) continue
+          if (!m[code]) m[code] = { foreign:0, trust:0, dealer:0 }
+          const raw = (item[diffField]||'0').toString().replace(/,/g,'')
+          m[code][key] += Math.round((parseInt(raw)||0) / 1000)
+        }
+      }
+      add(foreign,    'foreign', 'SecurityCode',          'DifferenceShares')
+      add(trust,      'trust',   'SecurityCode',          'DifferenceShares')
+      add(dealer,     'dealer',  'SecurityCode',          'DifferenceShares')
+      add(otcForeign, 'foreign', 'SecuritiesCompanyCode', 'DifferenceShares')
+      add(otcTrust,   'trust',   'SecuritiesCompanyCode', 'DifferenceShares')
+      add(otcDealer,  'dealer',  'SecuritiesCompanyCode', 'DifferenceShares')
+      instMap.value = m
+    }
+
+    async function fetchInstitutional() {
+      if (instLoading.value) return
+      instLoading.value = true
+      try {
+        const [r1,r2,r3,r4,r5,r6] = await Promise.allSettled([
+          fetch(INST_FOREIGN_URL).then(r=>r.json()),
+          fetch(INST_TRUST_URL).then(r=>r.json()),
+          fetch(INST_DEALER_URL).then(r=>r.json()),
+          fetch(OTC_FOREIGN_URL).then(r=>r.json()),
+          fetch(OTC_TRUST_URL).then(r=>r.json()),
+          fetch(OTC_DEALER_URL).then(r=>r.json()),
+        ])
+        parseInstitutional(
+          r1.status==='fulfilled'?r1.value:[],
+          r2.status==='fulfilled'?r2.value:[],
+          r3.status==='fulfilled'?r3.value:[],
+          r4.status==='fulfilled'?r4.value:[],
+          r5.status==='fulfilled'?r5.value:[],
+          r6.status==='fulfilled'?r6.value:[],
+        )
+      } catch(e) { console.warn('[Inst]', e.message) }
+      instLoading.value = false
+    }
+
+    const instRows = computed(() => watchlist.value.map(c => {
+      const d = instMap.value[c], s = stockMap.value[c]
+      const f = d?.foreign??0, t = d?.trust??0, dl = d?.dealer??0
+      return { code:c, name:(s?.name||c), foreign:f, trust:t, dealer:dl, total:f+t+dl }
+    }))
+
+    // ── 信用 ──────────────────────────────────────────────
+    const marginMap     = ref({})
+    const marginLoading = ref(false)
+
+    function parseMargin(tse, otc) {
+      const m = {}
+      for (const item of (tse||[])) {
+        const code = (item.SecurityCode||'').trim(); if (!code) continue
+        const ri = s => parseInt((item[s]||'0').toString().replace(/,/g,''))||0
+        const bal = ri('MarginBalance'), prev = ri('MarginBalanceOfPreviousDay')
+        const sbal= ri('ShortBalance'),  sprev= ri('ShortBalanceOfPreviousDay')
+        m[code] = { marginBal:bal, marginChg:bal-prev, shortBal:sbal, shortChg:sbal-sprev }
+      }
+      for (const item of (otc||[])) {
+        const code = (item.SecuritiesCompanyCode||item.SecurityCode||'').trim(); if (!code) continue
+        const ri = s => parseInt((item[s]||'0').toString().replace(/,/g,''))||0
+        const bal = ri('MarginBalance')||ri('MarginPurchaseBalance')
+        const prev= ri('MarginBalanceOfPreviousDay')||ri('PreviousMarginBalance')
+        const sbal= ri('ShortBalance')||ri('ShortSaleBalance')
+        const sprev=ri('ShortBalanceOfPreviousDay')||ri('PreviousShortBalance')
+        m[code] = { marginBal:bal, marginChg:bal-prev, shortBal:sbal, shortChg:sbal-sprev }
+      }
+      marginMap.value = m
+    }
+
+    async function fetchMargin() {
+      if (marginLoading.value) return
+      marginLoading.value = true
+      try {
+        const [r1,r2] = await Promise.allSettled([
+          fetch(MARGIN_URL).then(r=>r.json()),
+          fetch(OTC_MARGIN_URL).then(r=>r.json()),
+        ])
+        parseMargin(
+          r1.status==='fulfilled'?r1.value:[],
+          r2.status==='fulfilled'?r2.value:[],
+        )
+      } catch(e) { console.warn('[Margin]', e.message) }
+      marginLoading.value = false
+    }
+
+    const marginRows = computed(() => watchlist.value.map(c => {
+      const d = marginMap.value[c], s = stockMap.value[c]
+      return { code:c, name:(s?.name||c), ...(d||{ marginBal:null, marginChg:null, shortBal:null, shortChg:null }) }
+    }))
+
+    watch(tab, v => {
+      if (v==='法人' && !Object.keys(instMap.value).length) fetchInstitutional()
+      if (v==='信用' && !Object.keys(marginMap.value).length) fetchMargin()
+    })
+
     // ── 格式化 ────────────────────────────────────────────
     const cc   = n => n==null?'neu': n>0?'up': n<0?'dn':'flat'
     const fp   = n => (n==null||isNaN(n))?'--': Number(n).toFixed(2)
     const fc   = n => (n==null||isNaN(n))?'--': (n>0?'+':'')+n.toFixed(2)
     const fpct = n => (n==null||isNaN(n))?'--': (n>0?'+':'')+n.toFixed(2)+'%'
     const fvol = n => !n?'--': n>=10000?(n/10000).toFixed(1)+'萬': n.toLocaleString()
+    const fchg = n => n==null?'--': (n>0?'+':'')+n.toLocaleString()
+    const flot = n => n==null||n===0?'--': n.toLocaleString()
 
     return {
       todayDate, tableDate, tableTime,
@@ -832,8 +1009,12 @@ createApp({
       stockList, listLoading, inputValue, searchText,
       searchResults, showDirectAdd, directStatus, searchInputEl,
       onCompStart, onCompEnd, onInput, doSearch, directAdd,
+      // institutional
+      instMap, instLoading, instRows,
+      // margin
+      marginMap, marginLoading, marginRows,
       // format
-      cc, fp, fc, fpct, fvol,
+      cc, fp, fc, fpct, fvol, fchg, flot,
     }
   }
 }).mount('#app')
